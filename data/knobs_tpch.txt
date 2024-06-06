@@ -1,0 +1,51 @@
+PushProjectionThroughUnion
+PushProjectionThroughLimit
+EliminateOuterJoin
+PushDownLeftSemiAntiJoin
+PushLeftSemiLeftAntiThroughJoin
+LimitPushDown
+LimitPushDownThroughWindow
+ColumnPruning
+GenerateOptimization
+CollapseRepartition
+CollapseProject
+OptimizeWindowFunctions
+CollapseWindow
+CombineFilters
+EliminateOffsets
+EliminateLimits
+CombineUnions
+OptimizeRepartition
+TransposeWindow
+NullPropagation
+NullDownPropagation
+ConstantPropagation
+FoldablePropagation
+OptimizeIn
+OptimizeRand
+ConstantFolding
+EliminateAggregateFilter
+ReorderAssociativeOperator
+BooleanSimplification
+RemoveDispensableExpressions
+SimplifyBinaryComparison
+PruneFilters
+SimplifyCaseConversionExpressions
+EliminateSerialization
+RemoveRedundantAliases
+RemoveRedundantAggregates
+UnwrapCastInBinaryComparison
+RemoveNoopOperators
+OptimizeUpdateFields
+SimplifyExtractValueOps
+OptimizeCsvJsonExprs
+PushdownPredicatesAndPruneColumnsForCTEDef
+ReorderJoin
+Broadcast PART
+Broadcast SUPPLIER
+Broadcast PARTSUPP
+Broadcast CUSTOMER
+Broadcast ORDERS
+Broadcast LINEITEM
+Broadcast NATION
+Broadcast REGION
