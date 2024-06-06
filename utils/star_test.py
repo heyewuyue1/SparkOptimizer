@@ -28,11 +28,11 @@ def execute_query(query):
 
 f_list = os.listdir('./benchmark/queries/tpcds_fix')
 
-turn_off_cbo()
-print('cbo off')
+# turn_off_cbo()
+# print('cbo off')
 original_result = []
-for f_name in sorted(f_list)[71:72]:
-    with open('./benchmark/queries/tpcds_fix/' + f_name, 'r') as f:
+for f_name in sorted(f_list):
+    with open('./benchmark/queries/tpcds/' + f_name, 'r') as f:
         sql = f.read().strip().split(';')
         time_sum = 0
         for s in sql:
@@ -43,10 +43,10 @@ for f_name in sorted(f_list)[71:72]:
         original_result.append(time_sum)
         print(f_name, time_sum)
 
-turn_on_cbo()
-print('cbo on')
+# turn_on_cbo()
+# print('cbo on')
 optimized_result = []
-for f_name in sorted(f_list)[71:72]:
+for f_name in sorted(f_list):
     with open('./benchmark/queries/tpcds_fix/' + f_name, 'r') as f:
         sql = f.read().strip().split(';')
         time_sum = 0

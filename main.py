@@ -18,6 +18,7 @@ from pyhive import hive
 import configparser
 import json
 from utils.config import read_config
+import pandas as pd
 
 config = configparser.ConfigParser()
 config.read('config.cfg')
@@ -116,22 +117,61 @@ def check_and_load_database():
 
 if __name__ == '__main__':
     args = get_parser().parse_args()
+    if args.debug:
+        logger.setLevel('DEBUG')
     storage.TESTED_DATABASE = default['DATABASE']
     check_and_load_database()
     if default['BENCHMARK'] is None or not os.path.isdir('benchmark/queries/' + default['BENCHMARK']):
         logger.fatal('Cannot access the benchmark directory containing the sql files with path=%s', default['BENCHMARK'])
         sys.exit(1)
-
     storage.BENCHMARK_ID = storage.register_benchmark(default['BENCHMARK'])
-    logger.info('Run training mode')
     f_list = sorted(os.listdir('benchmark/queries/' + default['BENCHMARK']))
     logger.info('Found the following SQL files: %s', f_list)
-    for query in tqdm(f_list[:5]):
-        logger.info('run Q%s...', query)
-        approx_query_span_and_run(SparkConnector, default['BENCHMARK'], query)
-    most_frequent_knobs = storage.get_most_disabled_rules()
-    logger.info('Training ended. Most frequent disabled rules: %s', most_frequent_knobs)
-    bo = storage.get_best_optimizers()
-    bo.to_csv(f'data/best_{default["DATABASE"]}.csv', header=True, index=False)
-    best_improve = storage.get_best_imporovement()
-    logger.info(f'Best improvement: {best_improve}')
+    if args.test:
+        logger.info('Running testing mode.')
+        conn = SparkConnector()
+        time_default = 0
+        time_optimized = 0
+        best_df = pd.read_csv(f'data/best_{default["DATABASE"]}.csv')
+
+        for i in range(5):
+            logger.info(f'Running optimized for {i + 1} time...')
+            time_sum = 0
+            for i in tqdm(range(len(f_list))):
+                logger.debug('run Q%s with optimization...', f_list[i])
+                sql = storage.read_sql_file(f'benchmark/queries/{default["BENCHMARK"]}/{f_list[i]}')
+                hint_set = best_df[best_df['query_id'] == i + 1]['disabled_rules'].tolist()[0].split(',')
+                if hint_set[0] == 'None':
+                    hint_set = []
+                logger.debug(f'Found best hint set: {hint_set}')
+                conn.set_disabled_knobs(hint_set, sql)
+                result = conn.execute(sql)
+                logger.debug(f'time: ')
+                time_sum += result.time_usecs
+                conn.set_disabled_knobs([], sql)
+            logger.info(f'Total time: {time_sum}')
+        
+        conn.set_disabled_knobs([])
+        for i in range(5):
+            logger.info(f'Running default for {i + 1} time...')
+            time_sum = 0
+            for query in tqdm(f_list):
+                logger.debug('run Q%s without optimization...', query)
+                sql = storage.read_sql_file(f'benchmark/queries/{default["BENCHMARK"]}/{query}')
+                result = conn.execute(sql)
+                logger.debug(f'time: ')
+                time_sum += result.time_usecs
+            logger.info(f'Total time: {time_sum}')
+            time_default += time_sum
+        
+        logger.info(f'Best improvement: {(time_default - time_optimized) / time_default}')
+    else:
+        for query in tqdm(f_list):
+            logger.info('run Q%s...', query)
+            approx_query_span_and_run(SparkConnector, default['BENCHMARK'], query)
+        most_frequent_knobs = storage.get_most_disabled_rules()
+        logger.info('Training ended. Most frequent disabled rules: %s', most_frequent_knobs)
+        bo = storage.get_best_optimizers()
+        bo.to_csv(f'data/best_{default["DATABASE"]}.csv', header=True, index=False)
+        best_improve = storage.get_best_imporovement()
+        logger.info(f'Best improvement: {best_improve}')
