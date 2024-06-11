@@ -8,8 +8,6 @@ import re
 from utils.custom_logging import logger
 from connectors.connector import DBConnector
 import configparser
-import pandas as pd
-from connectors import get_rowcount
 
 EXCLUDED_RULES = 'spark.sql.optimizer.excludedRules'
 
@@ -17,26 +15,6 @@ def _postprocess_plan(plan) -> str:
     """Remove random ids from the explained query plan"""
     pattern = re.compile(r'#\d+L?|\[\d+]||\[plan_id=\d+\]')
     return re.sub(pattern, '', plan)
-
-def get_table_size(table_size_path):
-    #从csv文件读取一个dataframe，该dataframe的第一列是所有table的名字，第二列是对应的size，返回名字：size字典
-    df = pd.read_csv(table_size_path)
-    table_size_list = df.values.tolist()
-    table_size_dict = {}
-    for i in range(len(table_size_list)):
-        table_size_dict[table_size_list[i][0]] = table_size_list[i][1]
-    for key,item in table_size_dict.items():
-        item = item.split(' ')
-        if item[1] == 'bytes':
-            item[0] = float(item[0])
-        elif item[1] == 'KB':
-            item[0] = float(item[0]) * 1024
-        elif item[1] == 'MB':
-            item[0] = float(item[0]) * 1024 * 1024
-        elif item[1] == 'GB':
-            item[0] = float(item[0]) * 1024 * 1024 * 1024
-        table_size_dict[key] = item[0]
-    return table_size_dict
 
 def check_Broadcast(query,joinhint_knobs):
     select_index_list = []
@@ -147,6 +125,18 @@ class SparkConnector(DBConnector):
             return True
         else:
             return not knob in excluded_rules
+
+    def turn_off_cbo(self):
+        self.cursor.execute('SET spark.sql.cbo.enabled=false')
+        self.cursor.execute('SET spark.sql.cbo.joinReorder.dp.star.filter=false')
+        self.cursor.execute('SET spark.sql.cbo.starSchemaDetection=false')
+        self.cursor.execute('SET spark.sql.cbo.joinReorder.enabled=false')
+
+    def turn_on_cbo(self):
+        self.cursor.execute('SET spark.sql.cbo.enabled=true')
+        self.cursor.execute('SET spark.sql.cbo.joinReorder.dp.star.filter=true')
+        self.cursor.execute('SET spark.sql.cbo.starSchemaDetection=true')
+        self.cursor.execute('SET spark.sql.cbo.joinReorder.enabled=true')
 
     @staticmethod
     def get_name() -> str:

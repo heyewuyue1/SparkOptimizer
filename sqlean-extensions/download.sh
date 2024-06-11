@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: MIT
 #
 
-ARCH=x86
+ARCH=arm64
 
 echo "Download sqlean extensions for Linux arch=${ARCH}"
 rm -f sqlean-linux-${ARCH}.zip

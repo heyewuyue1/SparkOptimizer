@@ -16,13 +16,13 @@ from autosteer.query_span import run_get_query_span
 from tqdm import tqdm
 from pyhive import hive
 import configparser
-import json
-from utils.config import read_config
 import pandas as pd
 
 config = configparser.ConfigParser()
 config.read('config.cfg')
 default = config['DEFAULT']
+test = config['TEST']
+
 
 def approx_query_span_and_run(connector: Type[connectors.connector.DBConnector], benchmark: str, query: str):
     run_get_query_span(connector, benchmark, query)
@@ -30,69 +30,11 @@ def approx_query_span_and_run(connector: Type[connectors.connector.DBConnector],
     explore_optimizer_configs(connector, f'{benchmark}/{query}')
 
 
-def analyze(cursor):
-    """统计db"""
-    cursor.execute('SET spark.sql.cbo.enabled=true;')
-    cursor.execute('SET spark.sql.statistics.histogram.enabled=true;') # 开启统计直方图
-    cursor.execute('SET spark.sql.statistics.histogram.numBins=50;')  # 设定bins数量
-    cursor.execute('show tables;')
-    table_result = cursor.fetchall()
-    for i in table_result:
-        exe='ANALYZE TABLE '+i[1]+' COMPUTE STATISTICS FOR ALL COLUMNS;'
-        cursor.execute(exe)
-
-def get_column_stat(cursor,dic_column_stat,col_name,table_name):
-    database = default['BENCHMARK']
-    cursor.execute(f'USE {database}')
-    cursor.execute('DESC FORMATTED ' +table_name+' '+ col_name+' ;' )
-    re = cursor.fetchall()
-    if col_name not in dic_column_stat:
-        dic_column_stat[col_name] = {}
-    if re[3][0]=='min' and re[4][0]=='max' and re[9][0]=='histogram':
-        dic_column_stat[col_name] = {'table':table_name, 'data_type':re[1][1] ,'min':re[3][1], 'max':re[4][1], 'height_bin':re[9:]}
-    return dic_column_stat
-
-def get_dic2(cursor):
-    database = default['BENCHMARK']
-    cursor.execute(f'USE {database}')
-    dic_table_columns={}
-    dic_column_stat={}
-    cursor.execute('show tables;')
-    table_result = cursor.fetchall()
-    for i in table_result:
-        table_name = i[1]
-        exe=('DESC FORMATTED '+ table_name +' ;')
-        cursor.execute(exe)
-        table_re = cursor.fetchall()
-        if table_name not in dic_table_columns:
-            dic_table_columns[table_name] = []
-        for j in table_re:
-            if j[0] != '':
-                col_name = j[0]
-                dic_table_columns[table_name].append(j[0])
-                get_column_stat(cursor,dic_column_stat,col_name,table_name)
-            else:
-                break
-    return dic_table_columns,dic_column_stat
-
-def dic_to_json(database, dic_table_columns,dic_column_stat):
-    """把dic存成json文件"""
-    file_name = "dic_column_stat.json"
-    # 打开文件并写入 JSON 格式的字典内容
-    with open(f'data/{database}/{file_name}', "w") as file:
-        json.dump(dic_column_stat, file, indent=4)
-    file_name = "dic_table_columns.json"
-    # 打开文件并写入 JSON 格式的字典内容
-    with open(f'data/{database}/{file_name}', "w") as file:
-        json.dump(dic_table_columns, file, indent=4)
-
-
 def check_and_load_database():
     database = default['DATABASE']
     logger.info(f'check and load database {database}...')
     conn = hive.Connection(host=default['THRIFT_SERVER_URL'], port=default['THRIFT_PORT'], username=default['THRIFT_USERNAME'])
     cursor = conn.cursor()
-    # cursor.execute(f'DROP DATABASE IF EXISTS {database} CASCADE')
     cursor.execute(f'CREATE DATABASE IF NOT EXISTS {database}')
     cursor.execute(f'USE {database}')
     with open(f'./benchmark/schemas/{database}.sql', 'r') as f:
@@ -102,18 +44,6 @@ def check_and_load_database():
             if q.strip() != '':
                 cursor.execute(q)
     logger.info(f'load database {database} successfully')
-    # analyse tables
-    # if not os.path.exists(f'data/{database}'):
-    #     os.makedirs(f'data/{database}')
-    #     analyze(cursor)
-    #     logger.info(f'analyze database {database} successfully')
-    #     # analyzed dic → json
-    #     dic_table_columns,dic_column_stat = get_dic2(cursor)
-    #     dic_to_json(database, dic_table_columns,dic_column_stat)
-    #     logger.info(f'get dic_table_columns and dic_column_stat successfully')
-    # else:
-    #     logger.info(f'database {database} has been analyzed')
-
 
 if __name__ == '__main__':
     args = get_parser().parse_args()
@@ -132,38 +62,50 @@ if __name__ == '__main__':
         conn = SparkConnector()
         time_default = 0
         time_optimized = 0
-        best_df = pd.read_csv(f'data/best_{default["DATABASE"]}.csv')
+        best_df = pd.read_csv(test['OPTIMIZER'])
+        default_err = []
+        optimized_err = []
 
-        for i in range(5):
+        conn.set_disabled_knobs('',[])
+        conn.turn_off_cbo()
+        for i in range(eval(test['REPEATS'])):
+            logger.info(f'Running default for {i + 1} time...')
+            time_sum = 0
+            for query in tqdm(f_list):
+                logger.debug('run Q%s without optimization...', query)
+                sql = storage.read_sql_file(f'benchmark/queries/{test["BENCHMARK"]}/{query}')
+                try:
+                    result = conn.execute(sql)
+                except:
+                    logger.warning(f'{query} default execution failed.')
+                    default_err.append(query)
+                logger.debug(f'time: {result.time_usecs}')
+                time_sum += result.time_usecs
+            logger.info(f'Total time(default): {time_sum}')
+            time_default += time_sum
+        
+        conn.turn_on_cbo()
+        for i in range(eval(test['REPEATS'])):
             logger.info(f'Running optimized for {i + 1} time...')
             time_sum = 0
             for i in tqdm(range(len(f_list))):
                 logger.debug('run Q%s with optimization...', f_list[i])
-                sql = storage.read_sql_file(f'benchmark/queries/{default["BENCHMARK"]}/{f_list[i]}')
+                sql = storage.read_sql_file(f'benchmark/queries/{test["BENCHMARK"]}/{f_list[i]}')
                 hint_set = best_df[best_df['query_id'] == i + 1]['disabled_rules'].tolist()[0].split(',')
                 if hint_set[0] == 'None':
                     hint_set = []
                 logger.debug(f'Found best hint set: {hint_set}')
                 conn.set_disabled_knobs(hint_set, sql)
-                result = conn.execute(sql)
-                logger.debug(f'time: ')
+                try:
+                    result = conn.execute(sql)
+                except:
+                    logger.warning(f'{f_list[i]} optimized execution failed.')
+                    optimized_err.append(query)
+                logger.debug(f'time: {result.time_usecs}')
                 time_sum += result.time_usecs
                 conn.set_disabled_knobs([], sql)
-            logger.info(f'Total time: {time_sum}')
-        
-        conn.set_disabled_knobs([])
-        for i in range(5):
-            logger.info(f'Running default for {i + 1} time...')
-            time_sum = 0
-            for query in tqdm(f_list):
-                logger.debug('run Q%s without optimization...', query)
-                sql = storage.read_sql_file(f'benchmark/queries/{default["BENCHMARK"]}/{query}')
-                result = conn.execute(sql)
-                logger.debug(f'time: ')
-                time_sum += result.time_usecs
-            logger.info(f'Total time: {time_sum}')
-            time_default += time_sum
-        
+            logger.info(f'Total time(optimized): {time_sum}')
+
         logger.info(f'Best improvement: {(time_default - time_optimized) / time_default}')
     else:
         for query in tqdm(f_list):
@@ -172,6 +114,6 @@ if __name__ == '__main__':
         most_frequent_knobs = storage.get_most_disabled_rules()
         logger.info('Training ended. Most frequent disabled rules: %s', most_frequent_knobs)
         bo = storage.get_best_optimizers()
-        bo.to_csv(f'data/best_{default["DATABASE"]}.csv', header=True, index=False)
+        bo.to_csv(test['OPTIMIZER'], header=True, index=False)
         best_improve = storage.get_best_imporovement()
         logger.info(f'Best improvement: {best_improve}')
