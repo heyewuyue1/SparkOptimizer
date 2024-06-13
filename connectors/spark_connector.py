@@ -8,6 +8,9 @@ import re
 from utils.custom_logging import logger
 from connectors.connector import DBConnector
 import configparser
+import re
+import sqlparse
+from sqlparse.tokens import DML
 
 EXCLUDED_RULES = 'spark.sql.optimizer.excludedRules'
 
@@ -17,25 +20,44 @@ def _postprocess_plan(plan) -> str:
     return re.sub(pattern, '', plan)
 
 def check_Broadcast(query,joinhint_knobs):
-    select_index_list = []
-    index = query.find('select\n  ')
-    if index == -1:
-        index = query.find('SELECT ')
-    if index == -1:
-        index = query.find('select\n')
-    while index != -1:
-        select_index_list.append(index)
-        index = query.find('select\n  ',index+1)
-    for index in select_index_list:
-        if query[index+9] != ' ':
-            select_main_ind = index
+   # Remove comments from SQL to avoid parsing issues
+    query = sqlparse.format(query, strip_comments=True)
+    
+    # Parse the SQL
+    parsed = sqlparse.parse(query)
+    
+    if not parsed:
+        logger.error(f'Syntax Error in Query: {query}')
+    
+    # Use a helper function to recursively find the main SELECT
+    def find_main_select(tokens):
+        parenthesis_level = 0
+        current_pos = 0
+
+        for token in tokens:
+            if token.ttype in (sqlparse.tokens.Punctuation,) and token.value == '(':
+                parenthesis_level += 1
+            elif token.ttype in (sqlparse.tokens.Punctuation,) and token.value == ')':
+                parenthesis_level -= 1
+            elif token.ttype is DML and token.value.upper() == 'SELECT' and parenthesis_level == 0:
+                return current_pos
+            
+            current_pos += len(str(token))
+        
+        return -1
+    
+    for statement in parsed:
+        position = find_main_select(statement.tokens)
+        if position == -1:
+            return query
+    
     broadcast_str = ''
     for i in range(len(joinhint_knobs)):
         table_name = joinhint_knobs[i].split(' ')[1]
         broadcast_str = broadcast_str + table_name + ','
     broadcast_str = broadcast_str[:-1]
     try:
-        query = query[:select_main_ind] + 'select /*+ BROADCAST(' +broadcast_str + ') */' + query[select_main_ind+6:] 
+        query = query[:position] + 'select /*+ BROADCAST(' +broadcast_str + ') */' + query[position+6:] 
     except Exception as e:
         logger.error(f'Error when query is {query}, and joinhint is {joinhint_knobs}')
         return False
@@ -148,20 +170,22 @@ class SparkConnector(DBConnector):
         config = configparser.ConfigParser()
         config.read('./config.cfg')
         defaults = config['DEFAULT']
-        database = defaults['BENCHMARK']
-        with open(f'data/knobs_{database.split("_")[0]}.txt', 'r', encoding='utf-8') as f:
+        with open(defaults['KNOB'], 'r', encoding='utf-8') as f:
             return [line.replace('\n', '') for line in f.readlines()]
 
-if __name__ == '__main__':     
+if __name__ == '__main__':
+    import os     
     connector = SparkConnector()
-    knobs = ['PushProjectionThroughUnion','PushProjectionThroughLimit','Broadcast call_center','Broadcast promotion','Broadcast time_dim']
+    knobs = connector.get_knobs()
     broadcast_list = []
-
-    for i in range(103):
-        sql_path = f'./benchmark/queries/tpcds/{i:03d}.sql'
-        with open(sql_path,'r') as file:
+    f_list = sorted(os.listdir('benchmark/queries/tpcds_sf100'))
+    for f_name in f_list:
+        with open(f'benchmark/queries/tpcds_sf100/{f_name}','r') as file:
             query = file.read()
-        query = connector.set_disabled_knobs(knobs,query)
-        if 'BROADCAST' in query:
-            broadcast_list.append(i)
-    print(broadcast_list)
+        for knob in knobs:
+            if 'Broadcast' in knob:
+                query = connector.set_disabled_knobs([knob],query)
+                try:
+                    connector.explain(query)
+                except:
+                    print(query)

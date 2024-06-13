@@ -1,4 +1,4 @@
-create table if not exists dbgen_version (dv_version varchar(16),dv_create_date date,dv_create_time timestamp,dv_cmdline_args varchar(200)) USING PARQUET LOCATION '/root/data/tpc-ds-sf100-parquet/dbgen_version.parquet';
+create table if not exists dbgen_version (dv_version varchar(16),dv_create_date date,dv_create_time timestamp,dv_cmdline_args varchar(200)) USING PARQUET LOCATION '/dataa/tpc-ds-sf100-parquet/dbgen_version.parquet';
 
 create table if not exists customer_address (
     ca_address_sk integer not null,
@@ -14,7 +14,7 @@ create table if not exists customer_address (
     ca_country varchar(20),
     ca_gmt_offset decimal(5, 2),
     ca_location_type varchar(20)
-) USING PARQUET LOCATION '/root/data/tpc-ds-sf100-parquet/customer_address.parquet';
+) USING PARQUET LOCATION '/dataa/tpc-ds-sf100-parquet/customer_address.parquet';
 
 create table if not exists customer_demographics (
     cd_demo_sk integer not null,
@@ -26,7 +26,7 @@ create table if not exists customer_demographics (
     cd_dep_count integer,
     cd_dep_employed_count integer,
     cd_dep_college_count integer
-) USING PARQUET LOCATION '/root/data/tpc-ds-sf100-parquet/customer_demographics.parquet';
+) USING PARQUET LOCATION '/dataa/tpc-ds-sf100-parquet/customer_demographics.parquet';
 
 create table if not exists date_dim (
     d_date_sk integer not null,
@@ -57,7 +57,7 @@ create table if not exists date_dim (
     d_current_month varchar(1),
     d_current_quarter varchar(1),
     d_current_year varchar(1)
-) USING PARQUET LOCATION '/root/data/tpc-ds-sf100-parquet/date_dim.parquet';
+) USING PARQUET LOCATION '/dataa/tpc-ds-sf100-parquet/date_dim.parquet';
 
 create table if not exists warehouse (
     w_warehouse_sk integer not null,
@@ -74,7 +74,7 @@ create table if not exists warehouse (
     w_zip varchar(10),
     w_country varchar(20),
     w_gmt_offset decimal(5, 2)
-) USING PARQUET LOCATION '/root/data/tpc-ds-sf100-parquet/warehouse.parquet';
+) USING PARQUET LOCATION '/dataa/tpc-ds-sf100-parquet/warehouse.parquet';
 
 create table if not exists ship_mode (
     sm_ship_mode_sk integer not null,
@@ -83,7 +83,7 @@ create table if not exists ship_mode (
     sm_code varchar(10),
     sm_carrier varchar(20),
     sm_contract varchar(20)
-) USING PARQUET LOCATION '/root/data/tpc-ds-sf100-parquet/ship_mode.parquet';
+) USING PARQUET LOCATION '/dataa/tpc-ds-sf100-parquet/ship_mode.parquet';
 
 create table if not exists time_dim (
     t_time_sk integer not null,
@@ -96,19 +96,19 @@ create table if not exists time_dim (
     t_shift varchar(20),
     t_sub_shift varchar(20),
     t_meal_time varchar(20)
-) USING PARQUET LOCATION '/root/data/tpc-ds-sf100-parquet/time_dim.parquet';
+) USING PARQUET LOCATION '/dataa/tpc-ds-sf100-parquet/time_dim.parquet';
 
 create table if not exists reason (
     r_reason_sk integer not null,
     r_reason_id varchar(16) not null,
     r_reason_desc varchar(100)
-) USING PARQUET LOCATION '/root/data/tpc-ds-sf100-parquet/reason.parquet';
+) USING PARQUET LOCATION '/dataa/tpc-ds-sf100-parquet/reason.parquet';
 
 create table if not exists income_band (
     ib_income_band_sk integer not null,
     ib_lower_bound integer,
     ib_upper_bound integer
-) USING PARQUET LOCATION '/root/data/tpc-ds-sf100-parquet/income_band.parquet';
+) USING PARQUET LOCATION '/dataa/tpc-ds-sf100-parquet/income_band.parquet';
 
 create table if not exists item (
     i_item_sk integer not null,
@@ -133,7 +133,7 @@ create table if not exists item (
     i_container varchar(10),
     i_manager_id integer,
     i_product_name varchar(50)
-) USING PARQUET LOCATION '/root/data/tpc-ds-sf100-parquet/item.parquet';
+) USING PARQUET LOCATION '/dataa/tpc-ds-sf100-parquet/item.parquet';
 
 create table if not exists store (
     s_store_sk integer not null,
@@ -165,7 +165,7 @@ create table if not exists store (
     s_country varchar(20),
     s_gmt_offset decimal(5, 2),
     s_tax_precentage decimal(5, 2)
-) USING PARQUET LOCATION '/root/data/tpc-ds-sf100-parquet/store.parquet';
+) USING PARQUET LOCATION '/dataa/tpc-ds-sf100-parquet/store.parquet';
 
 create table if not exists call_center (
     cc_call_center_sk integer not null,
@@ -199,7 +199,7 @@ create table if not exists call_center (
     cc_country varchar(20),
     cc_gmt_offset decimal(5, 2),
     cc_tax_percentage decimal(5, 2)
-) USING PARQUET LOCATION '/root/data/tpc-ds-sf100-parquet/call_center.parquet';
+) USING PARQUET LOCATION '/dataa/tpc-ds-sf100-parquet/call_center.parquet';
 
 create table if not exists customer (
     c_customer_sk integer not null,
@@ -220,7 +220,7 @@ create table if not exists customer (
     c_login varchar(13),
     c_email_address varchar(50),
     c_last_review_date_sk integer
-) USING PARQUET LOCATION '/root/data/tpc-ds-sf100-parquet/customer.parquet';
+) USING PARQUET LOCATION '/dataa/tpc-ds-sf100-parquet/customer.parquet';
 
 create table if not exists web_site (
     web_site_sk integer not null,
@@ -249,7 +249,7 @@ create table if not exists web_site (
     web_country varchar(20),
     web_gmt_offset decimal(5, 2),
     web_tax_percentage decimal(5, 2)
-) USING PARQUET LOCATION '/root/data/tpc-ds-sf100-parquet/web_site.parquet';
+) USING PARQUET LOCATION '/dataa/tpc-ds-sf100-parquet/web_site.parquet';
 
 create table if not exists store_returns (
     sr_returned_date_sk integer,
@@ -272,7 +272,7 @@ create table if not exists store_returns (
     sr_reversed_charge decimal(7, 2),
     sr_store_credit decimal(7, 2),
     sr_net_loss decimal(7, 2)
-) USING PARQUET LOCATION '/root/data/tpc-ds-sf100-parquet/store_returns.parquet';
+) USING PARQUET LOCATION '/dataa/tpc-ds-sf100-parquet/store_returns.parquet';
 
 create table if not exists household_demographics (
     hd_demo_sk integer not null,
@@ -280,7 +280,7 @@ create table if not exists household_demographics (
     hd_buy_potential varchar(15),
     hd_dep_count integer,
     hd_vehicle_count integer
-) USING PARQUET LOCATION '/root/data/tpc-ds-sf100-parquet/household_demographics.parquet';
+) USING PARQUET LOCATION '/dataa/tpc-ds-sf100-parquet/household_demographics.parquet';
 
 create table if not exists web_page (
     wp_web_page_sk integer not null,
@@ -297,7 +297,7 @@ create table if not exists web_page (
     wp_link_count integer,
     wp_image_count integer,
     wp_max_ad_count integer
-) USING PARQUET LOCATION '/root/data/tpc-ds-sf100-parquet/web_page.parquet';
+) USING PARQUET LOCATION '/dataa/tpc-ds-sf100-parquet/web_page.parquet';
 
 create table if not exists promotion (
     p_promo_sk integer not null,
@@ -319,7 +319,7 @@ create table if not exists promotion (
     p_channel_details varchar(100),
     p_purpose varchar(15),
     p_discount_active varchar(1)
-) USING PARQUET LOCATION '/root/data/tpc-ds-sf100-parquet/promotion.parquet';
+) USING PARQUET LOCATION '/dataa/tpc-ds-sf100-parquet/promotion.parquet';
 
 create table if not exists catalog_page (
     cp_catalog_page_sk integer not null,
@@ -331,14 +331,14 @@ create table if not exists catalog_page (
     cp_catalog_page_number integer,
     cp_description varchar(100),
     cp_type varchar(100)
-) USING PARQUET LOCATION '/root/data/tpc-ds-sf100-parquet/catalog_page.parquet';
+) USING PARQUET LOCATION '/dataa/tpc-ds-sf100-parquet/catalog_page.parquet';
 
 create table if not exists inventory (
     inv_date_sk integer not null,
     inv_item_sk integer not null,
     inv_warehouse_sk integer not null,
     inv_quantity_on_hand integer
-) USING PARQUET LOCATION '/root/data/tpc-ds-sf100-parquet/inventory.parquet';
+) USING PARQUET LOCATION '/dataa/tpc-ds-sf100-parquet/inventory.parquet';
 
 create table if not exists catalog_returns (
     cr_returned_date_sk integer,
@@ -368,7 +368,7 @@ create table if not exists catalog_returns (
     cr_reversed_charge decimal(7, 2),
     cr_store_credit decimal(7, 2),
     cr_net_loss decimal(7, 2)
-) USING PARQUET LOCATION '/root/data/tpc-ds-sf100-parquet/catalog_returns.parquet';
+) USING PARQUET LOCATION '/dataa/tpc-ds-sf100-parquet/catalog_returns.parquet';
 
 create table if not exists web_returns (
     wr_returned_date_sk integer,
@@ -395,7 +395,7 @@ create table if not exists web_returns (
     wr_reversed_charge decimal(7, 2),
     wr_account_credit decimal(7, 2),
     wr_net_loss decimal(7, 2)
-) USING PARQUET LOCATION '/root/data/tpc-ds-sf100-parquet/web_returns.parquet';
+) USING PARQUET LOCATION '/dataa/tpc-ds-sf100-parquet/web_returns.parquet';
 
 create table if not exists web_sales (
     ws_sold_date_sk integer,
@@ -432,7 +432,7 @@ create table if not exists web_sales (
     ws_net_paid_inc_ship decimal(7, 2),
     ws_net_paid_inc_ship_tax decimal(7, 2),
     ws_net_profit decimal(7, 2)
-) USING PARQUET LOCATION '/root/data/tpc-ds-sf100-parquet/web_sales.parquet';
+) USING PARQUET LOCATION '/dataa/tpc-ds-sf100-parquet/web_sales.parquet';
 
 create table if not exists catalog_sales (
     cs_sold_date_sk integer,
@@ -469,7 +469,7 @@ create table if not exists catalog_sales (
     cs_net_paid_inc_ship decimal(7, 2),
     cs_net_paid_inc_ship_tax decimal(7, 2),
     cs_net_profit decimal(7, 2)
-) USING PARQUET LOCATION '/root/data/tpc-ds-sf100-parquet/catalog_sales.parquet';
+) USING PARQUET LOCATION '/dataa/tpc-ds-sf100-parquet/catalog_sales.parquet';
 
 create table if not exists store_sales (
     ss_sold_date_sk integer,
@@ -495,4 +495,4 @@ create table if not exists store_sales (
     ss_net_paid decimal(7, 2),
     ss_net_paid_inc_tax decimal(7, 2),
     ss_net_profit decimal(7, 2)
-) USING PARQUET LOCATION '/root/data/tpc-ds-sf100-parquet/store_sales.parquet' ;
+) USING PARQUET LOCATION '/dataa/tpc-ds-sf100-parquet/store_sales.parquet' ;
