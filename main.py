@@ -108,7 +108,7 @@ if __name__ == '__main__':
 
         logger.info(f'Best improvement: {(time_default - time_optimized) / time_default}')
     else:
-        for query in tqdm(f_list[:3]):
+        for query in tqdm(f_list):
             logger.info('run %s...', query)
             approx_query_span_and_run(SparkConnector, default['BENCHMARK'], query)
         most_frequent_knobs = storage.get_most_disabled_rules()
