@@ -19,7 +19,7 @@ from utils.util import read_sql_file
 
 SCHEMA_FILE = 'schema.sql'
 ENGINE = None
-TESTED_DATABASE = 'tpcds_sf100'
+TESTED_DATABASE = 'tpcds_sf10'
 BENCHMARK_ID = None
 
 
@@ -38,7 +38,11 @@ def _db():
             sys.exit(1)
 
         dbapi_conn.enable_load_extension(True)
-        dbapi_conn.load_extension(extension_path)
+        try:
+            dbapi_conn.load_extension(extension_path)
+        except:
+            extension_path = './sqlean-extensions/stats.so'
+            dbapi_conn.load_extension(extension_path)
         dbapi_conn.enable_load_extension(False)
 
     conn = ENGINE.connect()
@@ -65,12 +69,12 @@ def register_benchmark(name: str) -> int:
         return conn.execute('SELECT benchmarks.id FROM benchmarks WHERE name=:name', name=name).fetchone()[0]
 
 
-def register_query(query_path):
+def register_query(query_path, sql):
     # Register a new query
     with _db() as conn:
         try:
-            stmt = text('INSERT INTO queries (benchmark_id, query_path, result_fingerprint) VALUES (:benchmark_id, :query_path, :result_fingerprint )')
-            conn.execute(stmt, benchmark_id=BENCHMARK_ID, query_path=query_path, result_fingerprint=None)
+            stmt = text('INSERT INTO queries (benchmark_id, query_path, sql, result_fingerprint) VALUES (:benchmark_id, :query_path, :sql, :result_fingerprint )')
+            conn.execute(stmt, benchmark_id=BENCHMARK_ID, query_path=query_path, sql=sql, result_fingerprint=None)
         except IntegrityError:
             pass
 
@@ -96,6 +100,15 @@ def register_optimizer(query_path, optimizer, required: bool):
         except IntegrityError:
             pass  # do not store duplicates
 
+def register_rewrite_rule(query_path, rewrite_rule, required: bool):
+    with _db() as conn:
+        try:
+            table = 'query_effective_rewrite_rules' if not required else 'query_required_rewrite_rules'
+            stmt = text(f'INSERT INTO {table} (query_id, rewrite_rule) '
+                        'SELECT id, :rewrite_rule FROM queries WHERE query_path = :query_path')
+            conn.execute(stmt, table=table, rewrite_rule=rewrite_rule, query_path=query_path)
+        except IntegrityError:
+            pass  # do not store duplicates
 
 def register_optimizer_dependency(query_path, optimizer, dependency):
     with _db() as conn:
@@ -171,6 +184,16 @@ def _get_optimizers(table_name, query_path, projections):
         cursor = conn.execute(stmt, query_path=query_path)
         return cursor.fetchall()
 
+def _get_rewrite_rules(table_name, query_path, projections):
+    """No SQL injections as this is a private function only called from within *this* module"""
+    with _db() as conn:
+        stmt = f"""
+               SELECT {','.join(projections)}
+               FROM queries q, {table_name} qro
+               WHERE q.query_path=:query_path AND q.id = qro.query_id AND rewrite_rule != ''
+               """
+        cursor = conn.execute(stmt, query_path=query_path)
+        return cursor.fetchall()
 
 def get_required_optimizers(query_path):
     return list(map(lambda res: res[0], _get_optimizers('query_required_optimizers', query_path, ['optimizer'])))
@@ -179,6 +202,8 @@ def get_required_optimizers(query_path):
 def get_effective_optimizers(query_path):
     return list(map(lambda res: res[0], _get_optimizers('query_effective_optimizers', query_path, ['optimizer'])))
 
+def get_effective_rewrite_rules(query_path):
+    return list(map(lambda res: res[0], _get_rewrite_rules('query_effective_rewrite_rules', query_path, ['rewrite_rule'])))
 
 def get_effective_optimizers_depedencies(query_path):
     return list(map(lambda res: [res[0], res[1]], _get_optimizers('query_effective_optimizers_dependencies', query_path, ['optimizer', 'dependent_optimizer'])))
@@ -224,6 +249,34 @@ def register_query_config(query_path, disabled_rules, query_plan: dict, plan_has
 
     return is_duplicate
 
+def register_rewrite_config(query_path, rewrite_rules, rewrite_sql: dict, plan_hash):
+    """
+    Store the passed query optimizer configuration in the database.
+    :returns: query plan is already known and a duplicate
+    """
+    check_for_duplicated_plans = """SELECT count(*)
+        FROM queries q, query_rewrite_configs qrc
+        WHERE q.id = qrc.query_id
+              AND q.query_path = :query_path
+              AND qrc.hash = :plan_hash
+              AND qrc.rewrite_rules != :rewrite_rules"""
+    result = select_query(check_for_duplicated_plans, {query_path: query_path, plan_hash: plan_hash, rewrite_rules: rewrite_rules})
+    is_duplicate = result[0] > 0
+
+    with _db() as conn:
+        try:
+            num_rewrite_rules = 0 if rewrite_rules is None else rewrite_rules.count(',') + 1
+            stmt = f"""INSERT INTO query_rewrite_configs
+                   (query_id, rewrite_rules, rewrite_sql, num_rewrite_rules, hash, duplicated_plan) 
+                   SELECT id, :rewrite_rules, :rewrite_sql_processed , :num_rewrite_rules, :plan_hash, :is_duplicate FROM queries WHERE query_path = '{query_path}'
+                   """
+            conn.execute(stmt, rewrite_rules=str(rewrite_rules), rewrite_sql_processed=rewrite_sql, num_rewrite_rules=num_rewrite_rules,
+                         plan_hash=plan_hash, is_duplicate=is_duplicate)
+        except IntegrityError:
+            pass  # OK! Query configuration has already been inserted
+
+    return is_duplicate
+
 
 def check_for_existing_measurements(query_path, disabled_rules):
     query = """SELECT count(*) as num_measurements
@@ -250,6 +303,17 @@ def register_measurement(query_path, disabled_rules, walltime, input_data_size, 
         conn.execute(query, walltime=walltime, host=socket.gethostname(), time=now.strftime('%Y-%m-%d,%H:%M:%S'), input_data_size=input_data_size, nodes=nodes,
                      query_path=query_path, disabled_rules=str(disabled_rules))
 
+def register_rewrite_measurement(query_path, rewrite_rules, walltime, input_data_size, nodes):
+    logger.info('Serialize a new measurement for query %s and rewrite rules [%s]', query_path, rewrite_rules)
+    with _db() as conn:
+        now = datetime.now()
+        query = """
+                INSERT INTO rewrite_measurements (query_rewrite_config_id, walltime, machine, time, input_data_size, num_compute_nodes)
+                SELECT id, :walltime, :host, :time, :input_data_size, :nodes FROM query_rewrite_configs 
+                WHERE query_id = (SELECT id FROM queries WHERE query_path = :query_path) AND rewrite_rules = :rewrite_rules 
+                """
+        conn.execute(query, walltime=walltime, host=socket.gethostname(), time=now.strftime('%Y-%m-%d,%H:%M:%S'), input_data_size=input_data_size, nodes=nodes,
+                     query_path=query_path, rewrite_rules=str(rewrite_rules))
 
 def median_runtimes():
     class OptimizerConfigResult:
@@ -303,6 +367,38 @@ def get_most_disabled_rules():
         stat = sorted(stat.items(), key=lambda x: x[1], reverse=True)
     return stat
 
+def save_best_rewrite():
+    with _db() as conn:
+        get_best_stmt = '''select q.query_path, q.sql sql, qrc.rewrite_sql rewrite
+                            from queries q
+                            join query_rewrite_configs qrc on q.id = qrc.query_id
+                            join rewrite_measurements rm on qrc.id = rm.query_rewrite_config_id
+                            where rm.walltime = (
+                                select min(rm_inner.walltime)
+                                from query_rewrite_configs qrc_inner
+                                join rewrite_measurements rm_inner on qrc_inner.id = rm_inner.query_rewrite_config_id
+                                where qrc_inner.query_id = q.id
+                            )
+                            group by q.id, q.sql, qrc.rewrite_sql;
+                            '''
+        return pd.read_sql(get_best_stmt, conn)
+
+def save_best_optimization():
+    with _db() as conn:
+        get_best_stmt = '''select q.query_path, qoc.disabled_rules knobs
+                            from queries q
+                            join query_optimizer_configs qoc on q.id = qoc.query_id
+                            join measurements rm on qoc.id = rm.query_optimizer_config_id
+                            where rm.walltime = (
+                                select min(rm_inner.walltime)
+                                from query_optimizer_configs qoc_inner
+                                join measurements rm_inner on qoc_inner.id = rm_inner.query_optimizer_config_id
+                                where qoc_inner.query_id = q.id
+                            )
+                            group by q.id, q.sql, qoc.disabled_rules;
+                            '''
+        return pd.read_sql(get_best_stmt, conn)
+
 def get_best_optimizers():
     with _db() as conn:
         get_best_stmt = 'select query_id, disabled_rules, hash, min(walltime) from measurements m, query_optimizer_configs q where m.query_optimizer_config_id = q.id group by query_id;'
@@ -339,5 +435,4 @@ class TestStorage(unittest.TestCase):
             print(result.fetchall())
 
 if __name__ == '__main__':
-    best_improve = get_best_imporovement()
-    logger.info(f'Best improvement: {best_improve}')
+    print(save_best_rewrite())

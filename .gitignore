@@ -4,7 +4,6 @@ data/forest.csv
 evaluation/*
 logs/*.log
 logs/*.code*
-*.dylib
 results/*.sqlite
 *.DS_Store
 .metals/
@@ -12,14 +11,10 @@ results/*.sqlite
 nn/data/_data/*
 nn/data/tpcds_data/*
 nn/model/_model/*
-*.dll
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
-
-# C extensions
-*.so
 
 # Distribution / packaging
 .Python

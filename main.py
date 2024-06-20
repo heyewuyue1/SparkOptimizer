@@ -11,8 +11,9 @@ import connectors.connector
 from connectors.spark_connector import SparkConnector
 from utils.arguments_parser import get_parser
 from utils.custom_logging import logger
-from autosteer.dp_exploration import explore_optimizer_configs
+from autosteer.dp_exploration import explore_optimizer_configs, explore_rewrite_configs
 from autosteer.query_span import run_get_query_span
+from autosteer.rewrite_span import run_get_rewrite_span
 from tqdm import tqdm
 from pyhive import hive
 import configparser
@@ -24,11 +25,15 @@ default = config['DEFAULT']
 test = config['TEST']
 
 
-def approx_query_span_and_run(connector: Type[connectors.connector.DBConnector], benchmark: str, query: str):
-    run_get_query_span(connector, benchmark, query)
+def approx_query_span_and_run(connector: Type[connectors.connector.DBConnector], benchmark: str, query: str, best_rewrites):
+    run_get_query_span(connector, benchmark, query, best_rewrites)
     connector = connector()
-    explore_optimizer_configs(connector, f'{benchmark}/{query}')
+    explore_optimizer_configs(connector, f'{benchmark}/{query}', best_rewrites)
 
+def approx_rewrite_span_and_run(connector: Type[connectors.connector.DBConnector], benchmark: str, query: str):
+    run_get_rewrite_span(connector, benchmark, query)
+    connector = connector()
+    explore_rewrite_configs(connector, f'{benchmark}/{query}')
 
 def check_and_load_database():
     database = default['DATABASE']
@@ -81,7 +86,7 @@ if __name__ == '__main__':
                     default_err.append(query)
                 logger.debug(f'time: {result.time_usecs}')
                 time_sum += result.time_usecs
-            logger.info(f'Total time(default): {time_sum}')
+            logger.info(f'Total time(default) for {i + 1}th running: {time_sum}')
             time_default += time_sum
         
         conn.turn_on_cbo()
@@ -104,16 +109,29 @@ if __name__ == '__main__':
                 logger.debug(f'time: {result.time_usecs}')
                 time_sum += result.time_usecs
                 conn.set_disabled_knobs([], sql)
-            logger.info(f'Total time(optimized): {time_sum}')
-
+            logger.info(f'Total time(optimized) for {i + 1}th running: {time_sum}')
+            time_optimized += time_sum
+        logger.info(f'time_default: {time_default}')
+        logger.info(f'time_optimized: {time_optimized}')
         logger.info(f'Best improvement: {(time_default - time_optimized) / time_default}')
     else:
         for query in tqdm(f_list):
-            logger.info('run %s...', query)
-            approx_query_span_and_run(SparkConnector, default['BENCHMARK'], query)
+            logger.info('Rewriting %s...', query)
+            approx_rewrite_span_and_run(SparkConnector, default['BENCHMARK'], query)
+        best_rewrites = storage.save_best_rewrite()
+
+        for query in tqdm(f_list):
+            logger.info('Optimizing %s...', query)
+            approx_query_span_and_run(SparkConnector, default['BENCHMARK'], query, best_rewrites)
+        best_optimizations = storage.save_best_optimization()
         most_frequent_knobs = storage.get_most_disabled_rules()
         logger.info('Training ended. Most frequent disabled rules: %s', most_frequent_knobs)
-        bo = storage.get_best_optimizers()
-        bo.to_csv(test['OPTIMIZER'], header=True, index=False)
+        best_rewrites['query_path'] = best_rewrites['query_path'].astype(str)
+        best_optimizations['query_path'] = best_optimizations['query_path'].astype(str)
+
+        # best_config = best_rewrites.merge(best_optimizations, on='query_path', how='inner')[['sql','rewrite','knobs']]
+        best_config = best_rewrites.merge(best_optimizations, on='query_path')[['sql','rewrite','knobs']]
+        best_config['schema'] = 'tpcds'
+        best_config.to_csv(test['OPTIMIZER'], header=True, index=True)
         best_improve = storage.get_best_imporovement()
         logger.info(f'Best improvement: {best_improve}')

@@ -9,29 +9,10 @@ import storage
 from utils.custom_logging import logger
 from utils.config import read_config
 from utils.util import flatten
+from autosteer.hintset import HintSet
 
 N_THREADS = int(read_config()['DEFAULT']['EXPLAIN_THREADS'])
 FAILED = 'FAILED'
-
-
-class HintSet:
-    """A hint-set describing the disabled knobs; may have dependencies to other hint-sets"""
-
-    def __init__(self, knobs, dependencies):
-        self.knobs: set = knobs
-        self.dependencies: HintSet = dependencies
-        self.plan = None  # store the json query plan
-        self.required = False
-        self.predicted_runtime = -1.0
-
-    def get_all_knobs(self) -> list:
-        """Return all (including the dependent) knobs"""
-        return list(self.knobs) + (self.dependencies.get_all_knobs() if self.dependencies is not None else [])
-
-    def __str__(self):
-        res = '' if self.dependencies is None else (',' + str(self.dependencies))
-        return ','.join(self.knobs) + res
-
 
 def get_query_plan(args: tuple) -> HintSet:
     connector_type, sql_query, hintset = args
@@ -132,12 +113,12 @@ def serialize_dependencies(query_path: str, hint_set: HintSet):
             storage.register_optimizer_dependency(query_path, ','.join(sorted(hint_set.knobs)), knob)
 
 
-def run_get_query_span(connector_type, benchmark, query):
+def run_get_query_span(connector_type, benchmark, query, best_rewrites):
     query_path = f'benchmark/queries/{benchmark}/{query}'
     logger.info('Approximate query span for query: %s', query_path)
-    storage.register_query(query_path)
 
-    sql = storage.read_sql_file(query_path)
+    sql = best_rewrites.loc[best_rewrites['query_path'] == query_path, 'rewrite'].tolist()[0]
+    logger.info(f'get rewrite version of {query_path}: {sql}')
     query_span = approximate_query_span(connector_type, sql, get_query_plan, find_alternative_knobs=False, batch_wise=False)
 
     # Serialize the approximated query span in the database
