@@ -93,10 +93,11 @@ if __name__ == '__main__':
         for i in range(eval(test['REPEATS'])):
             logger.info(f'Running optimized for {i + 1} time...')
             time_sum = 0
-            for i in tqdm(range(len(f_list))):
-                logger.debug('run Q%s with optimization...', f_list[i])
-                sql = storage.read_sql_file(f'benchmark/queries/{test["BENCHMARK"]}/{f_list[i]}')
-                hint_set = best_df[best_df['query_id'] == i + 1]['disabled_rules'].tolist()[0].split(',')
+            for j in tqdm(range(len(f_list))):
+                logger.debug('run Q%s with optimization...', f_list[j])
+                sql = storage.read_sql_file(f'benchmark/queries/{test["BENCHMARK"]}/{f_list[j]}')
+                hint_set = best_df[best_df['sql'] == sql]['knobs'].tolist()[0].split(',')
+                sql = best_df[best_df['sql'] == sql]['rewrite'].to_list()[0]
                 if hint_set[0] == 'None':
                     hint_set = []
                 logger.debug(f'Found best hint set: {hint_set}')
@@ -104,12 +105,12 @@ if __name__ == '__main__':
                 try:
                     result = conn.execute(sql)
                 except:
-                    logger.warning(f'{f_list[i]} optimized execution failed.')
+                    logger.warning(f'{f_list[j]} optimized execution failed.')
                     optimized_err.append(query)
                 logger.debug(f'time: {result.time_usecs}')
                 time_sum += result.time_usecs
                 conn.set_disabled_knobs([], sql)
-            logger.info(f'Total time(optimized) for {i + 1}th running: {time_sum}')
+            logger.info(f'Total time(optimized) for {j + 1}th running: {time_sum}')
             time_optimized += time_sum
         logger.info(f'time_default: {time_default}')
         logger.info(f'time_optimized: {time_optimized}')

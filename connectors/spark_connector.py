@@ -89,13 +89,15 @@ class SparkConnector(DBConnector):
                 collection = self.cursor.fetchall()
                 elapsed_time_usecs = int((time.time_ns() - begin) / 1_000)
                 break
-            except:
+            except Exception as e:
                 if i == max_retry - 1:
                     logger.fatal(f'Execution failed {max_retry} times.')
+                    logger.fatal(e)
                     raise
                 else:
                     logger.warning('Execution failed %s times, try again...', str(i + 1))
         logger.debug('QUERY RESULT %s', str(collection)[:100].encode('utf-8') if len(str(collection)) > 100 else collection)
+        # logger.debug('QUERY RESULT %s', collection[0])
         collection = 'EmptyResult' if len(collection) == 0 else collection[0]
         logger.debug('Hash(QueryResult) = %s', str(hash(str(collection))))
         return DBConnector.TimedResult(collection, elapsed_time_usecs)

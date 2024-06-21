@@ -107,8 +107,13 @@ def execute_rewrite_set(config: RewriteExploration, connector: connectors.connec
     for _ in range(int(read_config()['DEFAULT']['REPEATS'])):
         try:
             timed_result = connector.execute(sql_query)
+            result_fingerprint = hash_sql_result(timed_result.result) if timed_result is not None else None
+            if timed_result is not None and not storage.register_query_fingerprint(query_path, result_fingerprint):
+                logger.warning('Result fingerprint=%s does not match existing fingerprint!', result_fingerprint)
+                raise
         # pylint: disable=broad-except
         except:
+            logger.fatal(sql_query)
             logger.fatal('Rewrite rule %s cannot be used for %s, ignoring...', config.get_disabled_opts_rules(), query_path)
             # timed_result = connector.TimedResult('FAILED', 60_000_000)
             break

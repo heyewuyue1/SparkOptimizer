@@ -57,13 +57,15 @@ def pre_process(sql):
 
 def post_process(query):
     query = query.replace('SUBSTRING', 'SUBSTR')
+    query = query.replace('DECIMAL(19, 0)', 'DECIMAL(17, 2)')
+    query = query.replace('$', 'dollar')
     # 正则表达式匹配 "FETCH NEXT xxx ROWS ONLY"
     fetch_pattern = re.compile(r"FETCH\s+NEXT\s+(\d+)\s+ROWS\s+ONLY", re.IGNORECASE)
     
     # 使用替换模式替换 "FETCH NEXT xxx ROWS ONLY" 为 "LIMIT xxx"
     query = fetch_pattern.sub(r"LIMIT \1", query)
 
-    query = re.sub(r'"\$(\w+)"', r'dollar\1', query)
+    # query = re.sub(r'"\$(\w+)"', r'dollar\1', query)
     query = re.sub(r'"(\w+days)"', r'\1', query)
     
     return query
@@ -81,7 +83,7 @@ def call_rewriter(args: tuple):
     # Wait for the subprocess to finish and capture the output
     output, error = process.communicate(input=input_string)
 
-    rew = output.replace("\u001B[32m", '').replace("\u001B[0m", '')
+    # rew = output.replace("\u001B[32m", '').replace("\u001B[0m", '')
     output = output.replace("\u001B[32m", '').replace("\u001B[0m", '').split('\n')
     ind = 0
     for i in output:
@@ -93,7 +95,7 @@ def call_rewriter(args: tuple):
     if output[ind-1] == 'No changed!':
         hintset.plan = sql_input
         return hintset
-    logger.debug(f'raw output: {rew}')
+    # logger.debug(f'raw output: {rew}')
     
     queries = output[ind:-3]
     # print(' '.join(queries))
@@ -133,7 +135,7 @@ def rewrite(args: tuple):
             break
     if output[ind-1] == 'No changed!':
         return sql_input
-    logger.debug(f'raw output: {rew}')
+    # logger.debug(f'raw output: {rew}')
     
     queries = output[ind:-3]
     # print(' '.join(queries))

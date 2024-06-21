@@ -26,7 +26,7 @@ BENCHMARK_ID = None
 def _db():
     global ENGINE
     url = f'sqlite:///results/{TESTED_DATABASE}.sqlite'
-    logger.debug('Connect to database: %s', url)
+    # logger.debug('Connect to database: %s', url)
     ENGINE = create_engine(url)
 
     @event.listens_for(ENGINE, 'connect')

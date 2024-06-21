@@ -2,8 +2,7 @@ playground/
 data/*.pkl
 data/forest.csv
 evaluation/*
-logs/*.log
-logs/*.code*
+logs/
 results/*.sqlite
 *.DS_Store
 .metals/
