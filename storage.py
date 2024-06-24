@@ -16,10 +16,10 @@ import unittest
 
 from utils.custom_logging import logger
 from utils.util import read_sql_file
-
+from utils.config import read_config
 SCHEMA_FILE = 'schema.sql'
 ENGINE = None
-TESTED_DATABASE = 'tpcds_sf10'
+TESTED_DATABASE = read_config()['DEFAULT']['DATABASE']
 BENCHMARK_ID = None
 
 
@@ -405,14 +405,15 @@ def get_best_optimizers():
         df = pd.read_sql(get_best_stmt, conn)
     return df
 
-def get_best_imporovement():
+def get_best_improvement():
     with _db() as conn:
         get_best_stmt = 'select query_id, min(walltime) walltime from measurements m, query_optimizer_configs q where m.query_optimizer_config_id = q.id group by query_id;'
         get_default_stmt = 'select query_id, walltime from measurements m, query_optimizer_configs q where m.query_optimizer_config_id = q.id and q.disabled_rules = "None";'
         df_best = pd.read_sql(get_best_stmt, conn)
         best_time = sum(df_best['walltime'])
         df_default = pd.read_sql(get_default_stmt, conn)
-        default_time = sum(df_default['walltime'])
+        repeats = int(read_config()['DEFAULT']['REPEATS'])
+        default_time = sum(df_default['walltime']) / repeats
         best_improvement = (default_time - best_time) / default_time
     return float(best_improvement)
 

@@ -110,7 +110,7 @@ if __name__ == '__main__':
                 logger.debug(f'time: {result.time_usecs}')
                 time_sum += result.time_usecs
                 conn.set_disabled_knobs([], sql)
-            logger.info(f'Total time(optimized) for {j + 1}th running: {time_sum}')
+            logger.info(f'Total time(optimized) for {i + 1}th running: {time_sum}')
             time_optimized += time_sum
         logger.info(f'time_default: {time_default}')
         logger.info(f'time_optimized: {time_optimized}')
@@ -134,5 +134,5 @@ if __name__ == '__main__':
         best_config = best_rewrites.merge(best_optimizations, on='query_path')[['sql','rewrite','knobs']]
         best_config['schema'] = 'tpcds'
         best_config.to_csv(test['OPTIMIZER'], header=True, index=True)
-        best_improve = storage.get_best_imporovement()
+        best_improve = storage.get_best_improvement()
         logger.info(f'Best improvement: {best_improve}')

@@ -92,7 +92,7 @@ class SparkConnector(DBConnector):
             except Exception as e:
                 if i == max_retry - 1:
                     logger.fatal(f'Execution failed {max_retry} times.')
-                    logger.fatal(e)
+                    logger.fatal(str(e)[:1000])
                     raise
                 else:
                     logger.warning('Execution failed %s times, try again...', str(i + 1))
