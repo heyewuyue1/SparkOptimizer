@@ -5,12 +5,12 @@ import time
 # sf100最长的82秒
 conn = hive.Connection(host='192.168.90.171', port=10000, username='hejiahao')
 cursor = conn.cursor()
-cursor.execute('USE tpcds_sf100')
+cursor.execute('USE tpcds_sf3000')
 max_time = 0
 
-for f_name in sorted(os.listdir('benchmark/queries/tpcds_sf100/')):
+for f_name in sorted(os.listdir('benchmark/queries/tpcds_sf3000/')):
     if f_name.endswith('.sql'):
-        f_path = os.path.join('benchmark/queries/tpcds_sf100/', f_name)
+        f_path = os.path.join('benchmark/queries/tpcds_sf3000/', f_name)
         with open(f_path, 'r') as f:
             sql = f.read().split(';')
             print(f_name)
