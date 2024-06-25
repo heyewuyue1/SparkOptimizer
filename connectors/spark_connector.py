@@ -78,7 +78,6 @@ class SparkConnector(DBConnector):
             except:
                 logger.warning(f'Atempt {i + 1} Failed to connect to thrift server, retrying...')
         self.cursor = self.conn.cursor()
-        # self.cursor.execute('SET spark.sql.cbo.enabled=true')
 
     def execute(self, query) -> DBConnector.TimedResult:
         max_retry = eval(self.config['DEFAULT']['MAX_RETRY'])
@@ -110,7 +109,10 @@ class SparkConnector(DBConnector):
 
         return _postprocess_plan(timed_result.result[0])
         # return _postprocess_plan(result)
-
+    
+    def clear_cache(self):
+        self.cursor.execute('CLEAR CACHE')
+        logger.info('Cache cleared')
     def set_disabled_knobs(self, knobs, query) -> str:
         """Toggle a list of knobs"""
         binary_knobs = []

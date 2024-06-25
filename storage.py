@@ -32,7 +32,7 @@ def _db():
     @event.listens_for(ENGINE, 'connect')
     def connect(dbapi_conn, _):
         """Load SQLite extension for median calculation"""
-        extension_path = './sqlean-extensions/stats.dll'
+        extension_path = './sqlean-extensions/stats.dylib'
         if not os.path.isfile(extension_path):
             logger.fatal('Please, first download the required sqlite3 extension using sqlean-extensions/download.sh')
             sys.exit(1)

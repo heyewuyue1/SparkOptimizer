@@ -60,7 +60,7 @@ if __name__ == '__main__':
         logger.fatal('Cannot access the benchmark directory containing the sql files with path=%s', default['BENCHMARK'])
         sys.exit(1)
     storage.BENCHMARK_ID = storage.register_benchmark(default['BENCHMARK'])
-    f_list = sorted(os.listdir('benchmark/queries/' + default['BENCHMARK']))
+    f_list = sorted(os.listdir('benchmark/queries/' + default['BENCHMARK']))[:3]
     logger.info('Found the following SQL files: %s', f_list)
     if args.test:
         logger.info('Running testing mode.')
@@ -87,7 +87,7 @@ if __name__ == '__main__':
                 logger.debug(f'time: {result.time_usecs}')
                 time_sum += result.time_usecs
             logger.info(f'Total time(default) for {i + 1}th running: {time_sum}')
-            conn.execute('CLEAR CACHE')
+            conn.clear_cache()
             time_default += time_sum
         
         conn.turn_on_cbo()
@@ -112,7 +112,7 @@ if __name__ == '__main__':
                 time_sum += result.time_usecs
                 conn.set_disabled_knobs([], sql)
             logger.info(f'Total time(optimized) for {i + 1}th running: {time_sum}')
-            conn.execute('CLEAR CACHE')
+            conn.clear_cache()
             time_optimized += time_sum
         logger.info(f'time_default: {time_default}')
         logger.info(f'time_optimized: {time_optimized}')
