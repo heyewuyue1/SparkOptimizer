@@ -60,7 +60,7 @@ if __name__ == '__main__':
         logger.fatal('Cannot access the benchmark directory containing the sql files with path=%s', default['BENCHMARK'])
         sys.exit(1)
     storage.BENCHMARK_ID = storage.register_benchmark(default['BENCHMARK'])
-    f_list = sorted(os.listdir('benchmark/queries/' + default['BENCHMARK']))[:3]
+    f_list = sorted(os.listdir('benchmark/queries/' + default['BENCHMARK']))
     logger.info('Found the following SQL files: %s', f_list)
     if args.test:
         logger.info('Running testing mode.')
