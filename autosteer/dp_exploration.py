@@ -66,11 +66,18 @@ def explore_rewrite_configs(connector: connectors.connector.DBConnector, query_p
         sql_query = sql_query_raw
     logger.info('Found %s duplicated query plans!', num_duplicate_plans)
 
-def explore_optimizer_configs(connector: connectors.connector.DBConnector, query_path, best_rewrites):
+### 
+def explore_optimizer_configs(connector: connectors.connector.DBConnector, query_path, best_rewrites, rewrite_method):
     """Use dynamic programming to find good optimizer configs"""
+    # query_path = {benchmark}/{query}
     query_path = 'benchmark/queries/' + query_path
-    logger.info('Start exploring optimizer configs for query %s', query_path)
-    sql_query = best_rewrites.loc[best_rewrites['query_path'] == query_path, 'rewrite'].tolist()[0]
+    if rewrite_method == 'greedy':
+        sql_query = best_rewrites.loc[best_rewrites['query_path'] == query_path, 'rewrite'].tolist()[0]
+    elif rewrite_method == 'mcts':
+        # path = query_path.split('/')[-1]
+        sql_query = best_rewrites.loc[best_rewrites['query_path']==query_path,'mcts'].tolist()[0]
+
+    logger.info('Start exploring optimizer configs for query %s, by %s', query_path,rewrite_method)
     hint_set_exploration = HintSetExploration(query_path)
     num_duplicate_plans = 0
     sql_query_raw = sql_query

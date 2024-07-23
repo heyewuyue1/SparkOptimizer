@@ -6,7 +6,7 @@ import numpy as np
 
 conn = hive.Connection(host='192.168.90.171', port=10000, username='hejiahao')
 cursor = conn.cursor()
-cursor.execute('USE tpcds_sf3000')
+cursor.execute('USE tpcds_sf100')
 
 def tune_aqe():
     # cursor.execute('SET spark.sql.adaptive.skewedJoin.enable=true')
@@ -17,7 +17,6 @@ def tune_aqe():
     # cursor.execute('SET spark.sql.adaptive.maxNumPostShufflePartitions=1000')
     # cursor.execute('SET spark.sql.adaptive.minNumPostShufflePartitions=10')
     # cursor.execute('SET spark.sql.adaptive.shuffle.targetPostShuffleInputSize=60')
-    cursor.execute('SET spark.sql.adaptive.coalescePartitions.enabled=false')
     print('Tuned AQE')
 
 def reset_aqe():
@@ -29,7 +28,6 @@ def reset_aqe():
     # cursor.execute('RESET spark.sql.adaptive.maxNumPostShufflePartitions')
     # cursor.execute('RESET spark.sql.adaptive.minNumPostShufflePartitions')
     # cursor.execute('RESET spark.sql.adaptive.shuffle.targetPostShuffleInputSize')
-    cursor.execute('RESET spark.sql.adaptive.coalescePartitions.enabled')
     print('Reset AQE')
 def execute_query(query):
     begin = time_ns()
@@ -38,13 +36,13 @@ def execute_query(query):
     return end - begin
 
 f_list = os.listdir('./benchmark/queries/tpcds_sf100')
-f_list = ['sql_087.sql']
+# f_list = ['sql_087.sql']
 
 cursor.execute('CLEAR CACHE')
 tune_aqe()
 optimized_result = []
 for f_name in sorted(f_list):
-    with open('./benchmark/queries/tpcds_sf3000/' + f_name, 'r') as f:
+    with open('./benchmark/queries/tpcds_sf100/' + f_name, 'r') as f:
         sql = f.read().strip().split(';')
         time_sum = 0
         for s in sql:
@@ -62,7 +60,7 @@ cursor.execute('CLEAR CACHE')
 reset_aqe()
 original_result = []
 for f_name in sorted(f_list):
-    with open('./benchmark/queries/tpcds_sf3000/' + f_name, 'r') as f:
+    with open('./benchmark/queries/tpcds_sf100/' + f_name, 'r') as f:
         sql = f.read().strip().split(';')
         time_sum = 0
         for s in sql:
@@ -101,6 +99,3 @@ plt.legend()
 
 # 显示图形
 plt.show()
-
-# relative improvement: 0.026486498850080243
-# best improvement: 0.08546974459939405

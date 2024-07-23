@@ -10,7 +10,6 @@ from utils.custom_logging import logger
 from utils.config import read_config
 from utils.util import flatten
 from autosteer.hintset import HintSet
-
 N_THREADS = int(read_config()['DEFAULT']['EXPLAIN_THREADS'])
 FAILED = 'FAILED'
 
@@ -112,13 +111,17 @@ def serialize_dependencies(query_path: str, hint_set: HintSet):
         for knob in hint_set.dependencies.get_all_knobs():
             storage.register_optimizer_dependency(query_path, ','.join(sorted(hint_set.knobs)), knob)
 
-
-def run_get_query_span(connector_type, benchmark, query, best_rewrites):
+### 
+def run_get_query_span(connector_type, benchmark, query, best_rewrites, rewrite_method):
     query_path = f'benchmark/queries/{benchmark}/{query}'
     logger.info('Approximate query span for query: %s', query_path)
 
-    sql = best_rewrites.loc[best_rewrites['query_path'] == query_path, 'rewrite'].tolist()[0]
-    logger.info(f'get rewrite version of {query_path}: {sql}')
+    if rewrite_method == 'greedy':
+        sql = best_rewrites.loc[best_rewrites['query_path'] == query_path, 'rewrite'].tolist()[0] 
+    elif rewrite_method == 'mcts':
+        sql = best_rewrites.loc[best_rewrites['path']==query,'mcts'].tolist()[0]
+        
+    logger.info(f'get {rewrite_method}_rewrite version of {query_path}')
     query_span = approximate_query_span(connector_type, sql, get_query_plan, find_alternative_knobs=False, batch_wise=False)
 
     # Serialize the approximated query span in the database
