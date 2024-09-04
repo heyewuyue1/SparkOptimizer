@@ -1,7 +1,3 @@
-# Copyright 2022 Intel Corporation
-# SPDX-License-Identifier: MIT
-#
-"""This module provides a connection to a Spark cluster that is used for benchmarking"""
 from pyhive import hive
 import time
 import re

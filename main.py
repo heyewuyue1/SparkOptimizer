@@ -42,12 +42,6 @@ def check_and_load_database():
     cursor = conn.cursor()
     cursor.execute(f'CREATE DATABASE IF NOT EXISTS {database}')
     cursor.execute(f'USE {database}')
-    with open(f'./benchmark/schemas/{database}.sql', 'r') as f:
-        query = f.read()
-        query = query.split(';')
-        for q in query:
-            if q.strip() != '':
-                cursor.execute(q)
     logger.info(f'load database {database} successfully')
 
 if __name__ == '__main__':
