@@ -8,7 +8,7 @@ import os
 import sys
 
 import connectors.connector
-from connectors.spark_connector import SparkConnector
+from connectors.spark_connector_ssh import SparkConnector
 from utils.arguments_parser import get_parser
 from utils.custom_logging import logger
 from autosteer.dp_exploration import explore_optimizer_configs, explore_rewrite_configs
@@ -18,6 +18,7 @@ from tqdm import tqdm
 from pyhive import hive
 import configparser
 import pandas as pd
+import paramiko
 
 config = configparser.ConfigParser()
 config.read('config.cfg')
@@ -36,12 +37,21 @@ def approx_rewrite_span_and_run(connector: Type[connectors.connector.DBConnector
     explore_rewrite_configs(connector, f'{benchmark}/{query}')
 
 def check_and_load_database():
+    hostname = '192.168.90.173'
+    port = 22
+    username = 'root'
+    password = 'root'
+    # 创建SSH客户端
+    client = paramiko.SSHClient()
+    # 自动添加主机密钥
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    # 连接远程主机
+    client.connect(hostname, port, username, password)
+    
     database = default['DATABASE']
     logger.info(f'check and load database {database}...')
-    conn = hive.Connection(host=default['THRIFT_SERVER_URL'], port=default['THRIFT_PORT'], username=default['THRIFT_USERNAME'])
-    cursor = conn.cursor()
-    cursor.execute(f'CREATE DATABASE IF NOT EXISTS {database}')
-    cursor.execute(f'USE {database}')
+    stdin, stdout, stderr = client.exec_command(f'spark-sql -e "use {database}";')
+
     logger.info(f'load database {database} successfully')
 
 if __name__ == '__main__':
@@ -53,7 +63,7 @@ if __name__ == '__main__':
     if default['BENCHMARK'] is None or not os.path.isdir('benchmark/queries/' + default['BENCHMARK']):
         logger.fatal('Cannot access the benchmark directory containing the sql files with path=%s', default['BENCHMARK'])
         sys.exit(1)
-    storage.BENCHMARK_ID = storage.register_benchmark(default['BENCHMARK'])
+    # storage.BENCHMARK_ID = storage.register_benchmark(default['BENCHMARK'])
     f_list = sorted(os.listdir('benchmark/queries/' + default['BENCHMARK']))  #测试全部sql
     logger.info('Found the following SQL files: %s', f_list)
     
@@ -64,35 +74,45 @@ if __name__ == '__main__':
         time_default = 0
         time_optimized = 0
         best_df = pd.read_csv(test['OPTIMIZER'])
+        best_df = best_df.fillna('None')
         default_err = []
         optimized_err = []
         
         ### original
-        conn.set_disabled_knobs('',[])
-        conn.turn_off_cbo()
+        q,exc_rules = conn.set_disabled_knobs('', [])
+        conf_cbo = conn.turn_off_cbo()
         for i in range(eval(test['REPEATS'])):
+        
             logger.info(f'Running default for {i + 1} time...')
             time_sum = 0
             for query in tqdm(f_list):
+                if '35' in query:
+                    logger.info(f"{query},pass")
+                    continue
                 logger.debug('run Q%s without optimization...', query)
                 sql = storage.read_sql_file(f'benchmark/queries/{test["BENCHMARK"]}/{query}')
                 try:
-                    result = conn.execute(sql)
+                    result = conn.execute(sql,conf_cbo,exc_rules)
                 except:
                     logger.warning(f'{query} default execution failed.')
                     default_err.append(query)
-                logger.debug(f'time: {result.time_usecs}')
+                logger.info(f'query:{query}; time: {result.time_usecs}') ###
                 time_sum += result.time_usecs
+                
             logger.info(f'Total time(default) for {i + 1}th running: {time_sum}')
             conn.clear_cache()
             time_default += time_sum
-        
+            
         ### optimized
-        conn.turn_on_cbo()
+        conf_oncbo = conn.turn_on_cbo()
         for i in range(eval(test['REPEATS'])):
+            
             logger.info(f'Running {test["REWRITE_METHOD"]}_optimized for {i + 1} time...')
             time_sum = 0
             for j in tqdm(range(len(f_list))):
+                if '35' in f_list[j]:
+                    logger.info(f"{f_list[j]},pass")  
+                    continue              
                 logger.debug('run Q%s with optimization...', f_list[j])
                 sql = storage.read_sql_file(f'benchmark/queries/{test["BENCHMARK"]}/{f_list[j]}')
 
@@ -106,16 +126,18 @@ if __name__ == '__main__':
                 if hint_set[0] == 'None':
                     hint_set = []
                 logger.debug(f'Found best hint set: {hint_set}')
-                conn.set_disabled_knobs(hint_set, sql)
+                q,exc_rules = conn.set_disabled_knobs(hint_set, sql)
                 
                 try:
-                    result = conn.execute(sql)
+                    conf = ','.join([conf_oncbo])
+                    result = conn.execute(sql,conf,exc_rules)
                 except:
                     logger.warning(f'{f_list[j]} optimized execution failed.')
                     optimized_err.append(j)
-                logger.debug(f'time: {result.time_usecs}')
+                logger.info(f'query:{f_list[j]}; time: {result.time_usecs}') ####
                 time_sum += result.time_usecs
-                conn.set_disabled_knobs([], sql)  # 恢复
+                # conn.set_disabled_knobs([], sql)  ### 1
+                
             logger.info(f'Total time({test["REWRITE_METHOD"]}_optimized) for {i + 1}th running: {time_sum}')
             conn.clear_cache()
             time_optimized += time_sum
