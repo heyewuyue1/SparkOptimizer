@@ -10,7 +10,7 @@ from autosteer.rewriter import rewrite
 from utils.custom_logging import logger
 from utils.config import read_config
 from utils.util import read_sql_file, hash_sql_result, hash_query_plan
-REWRITE_SCHEMA = read_config()['DEFAULT']['REWRITE_SCHEMA']
+REWRITE_SCHEMA = read_config()['REWRITE']['SCHEMA']
 
 def register_query_config_and_measurement(query_path, disabled_rules, logical_plan, timed_result=None, initial_call=False) -> bool:
     """Register a new optimizer configuration and return whether the plan was already known"""

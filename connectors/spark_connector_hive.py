@@ -1,19 +1,36 @@
 from pyhive import hive
 import time
 import re
-from utils.custom_logging import logger
+from utils.custom_logging import setup_custom_logger
 from connectors.connector import DBConnector
 import configparser
 import re
 import sqlparse
 from sqlparse.tokens import DML
 
+logger = setup_custom_logger('CONNECTOR')
 EXCLUDED_RULES = 'spark.sql.optimizer.excludedRules'
 
 def _postprocess_plan(plan) -> str:
     """Remove random ids from the explained query plan"""
     pattern = re.compile(r'#\d+L?|\[\d+]||\[plan_id=\d+\]')
     return re.sub(pattern, '', plan)
+
+def find_main_select(tokens):
+    parenthesis_level = 0
+    current_pos = 0
+
+    for token in tokens:
+        if token.ttype in (sqlparse.tokens.Punctuation,) and token.value == '(':
+            parenthesis_level += 1
+        elif token.ttype in (sqlparse.tokens.Punctuation,) and token.value == ')':
+            parenthesis_level -= 1
+        elif token.ttype is DML and token.value.upper() == 'SELECT' and parenthesis_level == 0:
+            return current_pos
+        
+        current_pos += len(str(token))
+    
+    return -1
 
 def check_Broadcast(query,joinhint_knobs):
    # Remove comments from SQL to avoid parsing issues
@@ -26,21 +43,6 @@ def check_Broadcast(query,joinhint_knobs):
         logger.error(f'Syntax Error in Query: {query}')
     
     # Use a helper function to recursively find the main SELECT
-    def find_main_select(tokens):
-        parenthesis_level = 0
-        current_pos = 0
-
-        for token in tokens:
-            if token.ttype in (sqlparse.tokens.Punctuation,) and token.value == '(':
-                parenthesis_level += 1
-            elif token.ttype in (sqlparse.tokens.Punctuation,) and token.value == ')':
-                parenthesis_level -= 1
-            elif token.ttype is DML and token.value.upper() == 'SELECT' and parenthesis_level == 0:
-                return current_pos
-            
-            current_pos += len(str(token))
-        
-        return -1
     
     for statement in parsed:
         position = find_main_select(statement.tokens)
@@ -93,7 +95,7 @@ class SparkConnector(DBConnector):
                     logger.warning('Execution failed %s times, try again...', str(i + 1))
         logger.debug('QUERY RESULT %s', str(collection)[:100].encode('utf-8') if len(str(collection)) > 100 else collection)
         # logger.debug('QUERY RESULT %s', collection[0])
-        collection = 'EmptyResult' if len(collection) == 0 else collection[0]
+        collection = 'EmptyResult' if len(collection) == 0 else collection
         logger.debug('Hash(QueryResult) = %s', str(hash(str(collection))))
         return DBConnector.TimedResult(collection, elapsed_time_usecs)
 

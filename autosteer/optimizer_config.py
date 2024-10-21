@@ -7,6 +7,10 @@ import storage
 import pandasql as pdsql
 import statistics
 from utils.custom_logging import logger
+from utils.config import read_config
+
+default = read_config()['DEFAULT']
+THRESHOLD=default['THRESHOLD']
 
 MAX_DP_DEPTH = 3  # Define early termination of the dynamic-programming exploration.
 
@@ -93,7 +97,7 @@ class HintSetExploration:
             self.blacklisted_hint_sets.add(frozenset(config.split(',')))
 
         # Find hint-sets performing better than the default plan
-        good_hint_sets = measurements[(measurements['median'] < baseline_median * 0.9) & (measurements['mean'] <= baseline_mean * 0.9)]
+        good_hint_sets = measurements[(measurements['median'] < baseline_median * THRESHOLD) & (measurements['mean'] <= baseline_mean * THRESHOLD)]
         configs = good_hint_sets.index.values.tolist()
         configs = filter(lambda n: n != 'None', configs)
         return [conf.split(',') for conf in configs]

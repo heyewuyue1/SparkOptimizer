@@ -6,7 +6,7 @@ CREATE TABLE IF NOT EXISTS benchmarks (
 --------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS queries (
     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
-    benchmark_id INTEGER REFERENCES benchmarks NOT NULL,
+    benchmark_id INTEGER REFERENCES benchmarks NOT NULL, 
     query_path varchar(256) NOT NULL,
     sql TEXT NOT NULL,
     result_fingerprint INTEGER DEFAULT 0
@@ -82,5 +82,18 @@ CREATE TABLE IF NOT EXISTS rewrite_measurements (
     time TIMESTAMP NOT NULL,
     input_data_size INTEGER NOT NULL,
     num_compute_nodes INTEGER NOT NULL
+);
+--------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS mv_rewrites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    query TEXT NOT NULL,
+    create_mv TEXT NOT NULL,
+    rewrite_query TEXT NOT NULL
+);
+--------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS predicate_rewrites (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    query TEXT NOT NULL,
+    rewrite_query TEXT NOT NULL
 );
 --------------------------------------------------------------------------------

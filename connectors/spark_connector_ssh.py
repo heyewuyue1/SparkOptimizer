@@ -17,6 +17,22 @@ def _postprocess_plan(plan) -> str:
     pattern = re.compile(r'#\d+L?|\[\d+]||\[plan_id=\d+\]')
     return re.sub(pattern, '', plan)
 
+# Use a helper function to recursively find the main SELECT
+def find_main_select(tokens):
+    parenthesis_level = 0
+    current_pos = 0
+
+    for token in tokens:
+        if token.ttype in (sqlparse.tokens.Punctuation,) and token.value == '(':
+            parenthesis_level += 1
+        elif token.ttype in (sqlparse.tokens.Punctuation,) and token.value == ')':
+            parenthesis_level -= 1
+        elif token.ttype is DML and token.value.upper() == 'SELECT' and parenthesis_level == 0:
+            return current_pos
+        
+        current_pos += len(str(token))
+    
+    return -1
 def check_Broadcast(query,joinhint_knobs):
    # Remove comments from SQL to avoid parsing issues
     query = sqlparse.format(query, strip_comments=True)
@@ -26,23 +42,6 @@ def check_Broadcast(query,joinhint_knobs):
     
     if not parsed:
         logger.error(f'Syntax Error in Query: {query}')
-    
-    # Use a helper function to recursively find the main SELECT
-    def find_main_select(tokens):
-        parenthesis_level = 0
-        current_pos = 0
-
-        for token in tokens:
-            if token.ttype in (sqlparse.tokens.Punctuation,) and token.value == '(':
-                parenthesis_level += 1
-            elif token.ttype in (sqlparse.tokens.Punctuation,) and token.value == ')':
-                parenthesis_level -= 1
-            elif token.ttype is DML and token.value.upper() == 'SELECT' and parenthesis_level == 0:
-                return current_pos
-            
-            current_pos += len(str(token))
-        
-        return -1
     
     for statement in parsed:
         position = find_main_select(statement.tokens)
@@ -87,13 +86,13 @@ class SparkConnector(DBConnector):
                 logger.warning(f'Atempt {i + 1} Failed to connect to SSH, retrying...')
         """
 
-    def execute(self, query, conf,exc_rules) -> DBConnector.TimedResult:  ### 1
+    def execute(self, query, conf=[],exc_rules='') -> DBConnector.TimedResult:  ### 1
         max_retry = eval(self.config['DEFAULT']['MAX_RETRY'])
         if len(conf)>0:
             confs = '  '.join([f'--conf {i}' if len(i)>0 else '' for i in conf.split(',')])
         else: confs=''
-        exe_command = f""" source /etc/profile; /root/spark-3.4.0-bin-hadoop3/bin/spark-sql \
-         --database tpcds_3000g \
+        exe_command = f""" source /etc/profile; /usr/local/spark/bin/spark-sql \
+         --database {self.config['DEFAULT']['DATABASE']} \
          --driver-cores 8 \
          --driver-memory 20g  \
          --num-executors 24   \
@@ -116,6 +115,7 @@ class SparkConnector(DBConnector):
          --conf spark.sql.files.minPartitionNum=180 \
          --conf spark.sql.files.maxPartitionBytes=256m \
          --conf spark.nodemanager.numas=4 \
+         --conf spark.sql.cli.print.header=true \
          {confs} \
           -e "{exc_rules} {query} " """
         for i in range(max_retry):
@@ -127,12 +127,12 @@ class SparkConnector(DBConnector):
                 out = str(stdout.read().decode())
                 err = str(stderr.read().decode())
                 client.close()
-                print(exe_command)
-                # print(out,err)
+                # print(exe_command)
+                # print(out)
                 if "RESET" in exc_rules:
                     collection = out ### 
                 else:
-                    logger.info(f"exc_rules:  {out.splitlines()[0]}")
+                    # logger.info(f"exc_rules:  {out.splitlines()[0]}")
                     collection = '\n'.join(out.splitlines()[1:]) 
                 collection = out
                 time_line = err.split('\n')[-2]
@@ -150,7 +150,7 @@ class SparkConnector(DBConnector):
                     logger.warning('Execution failed %s times, try again...', str(i + 1))
         logger.debug('QUERY RESULT %s', str(collection)[:100].encode('utf-8') if len(str(collection)) > 100 else collection)
         # logger.debug('QUERY RESULT %s', collection[0])
-        collection = 'EmptyResult' if len(collection) == 0 else collection[0]
+        # collection = 'EmptyResult' if len(collection) == 0 else collection[0]
         logger.debug('Hash(QueryResult) = %s', str(hash(str(collection))))
         return DBConnector.TimedResult(collection, elapsed_time_usecs)
 

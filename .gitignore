@@ -3,7 +3,7 @@ data/*.pkl
 data/forest.csv
 evaluation/*
 logs/
-results/*.sqlite
+storage/*.sqlite
 *.DS_Store
 .metals/
 .vscode

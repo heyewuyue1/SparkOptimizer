@@ -14,19 +14,19 @@ from sqlalchemy.sql import text
 from sqlalchemy.exc import IntegrityError
 import unittest
 
-from utils.custom_logging import logger
+from utils.custom_logging import setup_custom_logger
 from utils.util import read_sql_file
 from utils.config import read_config
 SCHEMA_FILE = 'schema.sql'
 ENGINE = None
-TESTED_DATABASE = read_config()['DEFAULT']['DATABASE']
+TESTED_DATABASE = read_config()['DEFAULT']['STORAGE']
 BENCHMARK_ID = None
-
+logger = setup_custom_logger('STORAGE')
 
 def _db():
     global ENGINE
-    url = f'sqlite:///results/{TESTED_DATABASE}.sqlite'
-    # logger.debug('Connect to database: %s', url)
+    url = f'sqlite:///storage/{TESTED_DATABASE}.sqlite'
+    logger.debug('Connect to database: %s', url)
     ENGINE = create_engine(url)
 
     @event.listens_for(ENGINE, 'connect')
@@ -314,6 +314,22 @@ def register_rewrite_measurement(query_path, rewrite_rules, walltime, input_data
                 """
         conn.execute(query, walltime=walltime, host=socket.gethostname(), time=now.strftime('%Y-%m-%d,%H:%M:%S'), input_data_size=input_data_size, nodes=nodes,
                      query_path=query_path, rewrite_rules=str(rewrite_rules))
+        
+def register_mv_rewrite(query, create_mv, rewrite_query):
+    with _db() as conn:
+        reg_query = '''
+                INSERT INTO mv_rewrites (query, create_mv, rewrite_query)
+                VALUES (:query, :create_mv, :rewrite_query)
+                '''
+        conn.execute(reg_query, query=query, create_mv=create_mv, rewrite_query=rewrite_query)
+
+def register_predicate_rewrite(query, rewrite_query):
+    with _db() as conn:
+        reg_query = '''
+                INSERT INTO predicate_rewrites (query, rewrite_query)
+                VALUES (:query, :rewrite_query)
+                '''
+        conn.execute(reg_query, query=query, rewrite_query=rewrite_query)
 
 def median_runtimes():
     class OptimizerConfigResult:
