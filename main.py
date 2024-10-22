@@ -8,7 +8,7 @@ import os
 import sys
 import connectors
 from utils.arguments_parser import get_parser
-from utils.custom_logging import setup_custom_logger
+from utils.custom_logging import logger
 from utils.config import read_config
 from autosteer.dp_exploration import explore_optimizer_configs, explore_rewrite_configs
 from autosteer.query_span import run_get_query_span
@@ -22,19 +22,19 @@ import paramiko
 
 config = read_config()
 default = config['DEFAULT']
-test = config['TEST']
+rewrite = config['REWRITE']
+hint = config['HINT']
 connection = config['CONNECTION']
-logger = setup_custom_logger('MAIN')
 if connection['CONNECTOR'] == 'hive':
     from connectors.spark_connector_hive import SparkConnector
 if connection['CONNECTOR'] == 'ssh':
     from connectors.spark_connector_ssh import SparkConnector
 
-def approx_query_span_and_run(connector: Type[connectors.connector.DBConnector], benchmark: str, query: str,
-                              best_rewrites, rewrite_method: str):
-    run_get_query_span(connector, benchmark, query, best_rewrites, rewrite_method)
+def approx_query_span_and_run(connector: Type[connectors.connector.DBConnector], query_path: str,
+                              sql, rewrite_method: str):
+    run_get_query_span(connector,  query_path, sql, rewrite_method)
     connector = connector()
-    explore_optimizer_configs(connector, f'{benchmark}/{query}', best_rewrites, rewrite_method)
+    explore_optimizer_configs(connector, query_path, sql, rewrite_method)
 
 
 def approx_rewrite_span_and_run(connector: Type[connectors.connector.DBConnector], benchmark: str, query: str):
@@ -156,57 +156,54 @@ if __name__ == '__main__':
     else:
         if default['USE_REWRITE'] == 'true':
             logger.info(f'Use Rewrite')
-            rewrite_cfg = config['REWRITE']
-            if rewrite_cfg['METHOD'] == 'greedy':
+            if rewrite['METHOD'] == 'greedy':
                 logger.info('Rewrite Method: greedy')
                 for query in f_list:
                     logger.info('Rewriting %s...', query)
                     approx_rewrite_span_and_run(SparkConnector, default['BENCHMARK'], query)
                 best_rewrites = storage.save_best_rewrite()
-                best_rewrites.to_csv(config['REWRITE']['REWRITE_EXP'], sep='|', index_label='id')
+                best_rewrites.to_csv(config['REWRITE']['REWRITE_EXP'], sep=';', index_label='id')
                 logger.info(f'Saved best rewrites to {config["REWRITE"]["REWRITE_EXP"]}')
-            elif rewrite_cfg['METHOD'] == 'predicate':
+            elif rewrite['METHOD'] == 'predicate':
                 logger.info('Rewrite Method: predicate')
                 for query in f_list:
                     logger.info(f'Rewriting {query}...')
                     rewrite_and_test_syntax(SparkConnector, query)
-            elif rewrite_cfg['METHOD'] == 'view':
+                best_rewrites = storage.save_best_predicate_rewrite()
+                best_rewrites.to_csv(config['REWRITE']['REWRITE_EXP'], sep=';', index_label='id')
+            elif rewrite['METHOD'] == 'view':
                 logger.info('Rewrite Method: view')
                 for query in f_list:
                     logger.info(f'Rewriting {query}...')
                     generate_rewrite_mv(query)
-                pass
+                best_rewrites = storage.save_best_mv_rewrite()
+                best_rewrites.to_csv(config['REWRITE']['REWRITE_EXP'], sep=';', index_label='id')
 
         if default['USE_HINT'] == 'true':
-            for query in tqdm(f_list):
-                logger.info('Optimizing %s...', query)
+            if default['USE_REWRITE'] == 'true':
+                logger.info('Using rewrited sql as input to genenrate corresponding hint')
+                sql_list = best_rewrites['rewrite_sql'].tolist()
+            else:
+                logger.info('Using original sql as input to genenrate corresponding hint')
+                sql_list = []
+                for query in f_list:
+                    with open(f'benchmark/queries/{default["benchmark"]}/{query}') as f:
+                        sql = f.read().strip()
+                        sql_list.append(sql)
+            logger.info(f'total sql: {len(sql_list)}')
+            for i in range(sql_list):
+                logger.info(f'Optimizing sql_list[{i}]...')
                 # 如果采用的改写方法是mcts需要把appox的对象换成用mcts改写过的查询
-                if default['REWRITE_METHOD'] == 'mcts':  # 向storage登记每条mcts改写的sql
-                    query_path = f'benchmark/queries/{default["benchmark"]}/{query}'
-                    path = query.split('/')[-1]
-                    sql = best_rewrites.loc[best_rewrites['path'] == path, 'mcts'].tolist()[0]
-                    best_rewrites.loc[
-                        best_rewrites['path'] == path, 'query_path'] = query_path  # 向best_rewrites中添加query_path列
-                    storage.register_query(query_path, sql)
-                approx_query_span_and_run(SparkConnector, default['BENCHMARK'], query, best_rewrites,
-                                          default['REWRITE_METHOD'])
+                query_path = f'sql_list[{i}]'
+                storage.register_query(query_path, sql)
+                if default['USE_REWRITE'] == 'true':
+                    approx_query_span_and_run(SparkConnector, query_path, sql_list[i], rewrite['METHOD'])
+                else:
+                    approx_query_span_and_run(SparkConnector, query_path, sql_list[i], 'None')
             best_optimizations = storage.save_best_optimization()
+            best_optimizations.to_csv(hint['HINT_EXP'], sep=';', index_label='id')
             most_frequent_knobs = storage.get_most_disabled_rules()
             logger.info('Most frequent knobs: %s', most_frequent_knobs)
 
-        # best_rewrites['query_path'] = best_rewrites['query_path'].astype(str)
-        # best_optimizations['query_path'] = best_optimizations['query_path'].astype(str)
-
-        # if default['REWRITE_METHOD'] == 'greedy':
-        #     best_config = best_rewrites.merge(best_optimizations, on='query_path')[['sql','rewrite','knobs']]
-        # elif default['REWRITE_METHOD'] == 'mcts':
-        #     best_optimizations = best_optimizations.rename(columns={'knobs': 'mcts_knobs'}) 
-        #     best_config = best_rewrites.merge(best_optimizations, on='query_path')[['mcts','mcts_knobs']]
-
         if default['USE_CARD'] == 'true':
-            fill_real_card(default['CARD_FILE'])
-
-        # best_config['schema'] = 'tpcds'
-        # best_config.to_csv(test['OPTIMIZER'], header=True, index=True)  ###
-        # best_improve = storage.get_best_improvement()
-        # logger.info(f'Best improvement: {best_improve}')
+            fill_real_card(default['CARD_EXP'])

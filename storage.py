@@ -385,7 +385,7 @@ def get_most_disabled_rules():
 
 def save_best_rewrite():
     with _db() as conn:
-        get_best_stmt = '''select q.query_path, q.sql sql, qrc.rewrite_sql rewrite
+        get_best_stmt = '''select q.sql sql, qrc.rewrite_sql rewrite_sql
                             from queries q
                             join query_rewrite_configs qrc on q.id = qrc.query_id
                             join rewrite_measurements rm on qrc.id = rm.query_rewrite_config_id
@@ -398,10 +398,20 @@ def save_best_rewrite():
                             group by q.id, q.sql, qrc.rewrite_sql;
                             '''
         return pd.read_sql(get_best_stmt, conn)
+    
+def save_best_predicate_rewrite():
+    with _db() as conn:
+        get_best_stmt = '''select query sql, rewrite_query rewrite_sql from predicate_rewrites'''
+        return pd.read_sql(get_best_stmt, conn)
+    
+def save_best_mv_rewrite():
+    with _db() as conn:
+        get_best_stmt = '''select query sql, rewrite_query rewrite_sql from mv_rewrites'''
+        return pd.read_sql(get_best_stmt, conn)
 
 def save_best_optimization():
     with _db() as conn:
-        get_best_stmt = '''select q.query_path, qoc.disabled_rules knobs
+        get_best_stmt = '''select q.sql sql, qoc.disabled_rules knobs
                             from queries q
                             join query_optimizer_configs qoc on q.id = qoc.query_id
                             join measurements rm on qoc.id = rm.query_optimizer_config_id
