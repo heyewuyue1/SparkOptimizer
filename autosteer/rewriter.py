@@ -88,17 +88,15 @@ def call_rewriter(args: tuple):
     ind = 0
     for i in output:
         if not i.startswith('SELECT') and not i.startswith('select') and not i.startswith('with ') and not i.startswith('WITH '):
-            pass
+            continue
         else:
             ind = output.index(i)
             break
     if output[ind-1] == 'No changed!':
         hintset.plan = sql_input
         return hintset
-    # logger.debug(f'raw output: {rew}')
     
     queries = output[ind:-3]
-    # print(' '.join(queries))
     output = ' '.join(queries).replace('"', '')
     if 'select' in output or 'SELECT' in output or 'Select' in output:
         # change the functions edited to fit calcite back to original ones

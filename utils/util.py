@@ -10,7 +10,7 @@ import hashlib
 def read_sql_file(filename, encoding='utf-8') -> str:
     """Read SQL file, remove comments, and return a list of sql statements as a string"""
     with open(filename, encoding=encoding) as f:
-        file = f.read()
+        file = f.read().strip()
     statements = file.split('\n')
     return '\n'.join(filter(lambda line: not line.startswith('--'), statements))
 

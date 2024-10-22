@@ -229,7 +229,7 @@ def add_predicate(sql, min_max_dict):
 
 def rewrite_and_test_syntax(connector, query):
         conn = connector()
-        with open(f'benchmark/queries/{default['BENCHMARK']}/{query}') as f:
+        with open(f"benchmark/queries/{default['BENCHMARK']}/{query}") as f:
             sql = f.read().strip()       
         modified_sql = modify(sql)
         logger.debug(f'Modified into: {modified_sql}')

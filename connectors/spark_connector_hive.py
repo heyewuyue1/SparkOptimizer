@@ -7,6 +7,10 @@ import configparser
 import re
 import sqlparse
 from sqlparse.tokens import DML
+from utils.config import read_config
+
+connection = read_config()['CONNECTION']
+hint = read_config()['HINT']
 
 logger = setup_custom_logger('CONNECTOR')
 EXCLUDED_RULES = 'spark.sql.optimizer.excludedRules'
@@ -67,18 +71,17 @@ class SparkConnector(DBConnector):
         super().__init__()
         self.config = configparser.ConfigParser()
         self.config.read('./config.cfg')
-        defaults = self.config['DEFAULT']
         for i in range(5):
             try:
-                self.conn = hive.Connection(host=defaults['THRIFT_SERVER_URL'], port=defaults['THRIFT_PORT'], username=defaults['THRIFT_USERNAME'], database=defaults['DATABASE'])
-                logger.debug('SparkSQL connector conntects to thrift server: ' + defaults['THRIFT_SERVER_URL'] + ':' + defaults['THRIFT_PORT'])
+                self.conn = hive.Connection(host=connection['THRIFT_SERVER_URL'], port=connection['THRIFT_PORT'], username=connection['THRIFT_USERNAME'], database=connection['DATABASE'])
+                logger.debug('SparkSQL connector conntects to thrift server: ' + connection['THRIFT_SERVER_URL'] + ':' + connection['THRIFT_PORT'])
                 break
             except:
                 logger.warning(f'Atempt {i + 1} Failed to connect to thrift server, retrying...')
         self.cursor = self.conn.cursor()
 
     def execute(self, query) -> DBConnector.TimedResult:
-        max_retry = eval(self.config['DEFAULT']['MAX_RETRY'])
+        max_retry = eval(connection['MAX_RETRY'])
         for i in range(max_retry):
             try:
                 begin = time.time_ns()
@@ -89,7 +92,7 @@ class SparkConnector(DBConnector):
             except Exception as e:
                 if i == max_retry - 1:
                     logger.fatal(f'Execution failed {max_retry} times.')
-                    logger.fatal(str(e)[:1000])
+                    logger.debug(str(e)[:1000])
                     raise
                 else:
                     logger.warning('Execution failed %s times, try again...', str(i + 1))
@@ -100,13 +103,8 @@ class SparkConnector(DBConnector):
         return DBConnector.TimedResult(collection, elapsed_time_usecs)
 
     def explain(self, query) -> str:
-        # timed_result_c = self.execute(f'EXPLAIN COST {query}')
         timed_result = self.execute(f'EXPLAIN FORMATTED {query}')
-        # database = self.config['DEFAULT']['BENCHMARK']
-        # result = get_rowcount.get_explain(database, timed_result.result[0], timed_result_c.result[0])
-
-        return _postprocess_plan(timed_result.result[0])
-        # return _postprocess_plan(result)
+        return _postprocess_plan(timed_result.result[0][0])
     
     def clear_cache(self):
         self.cursor.execute('CLEAR CACHE')
@@ -171,8 +169,7 @@ class SparkConnector(DBConnector):
         """Static method returning all knobs defined for this connector"""
         config = configparser.ConfigParser()
         config.read('./config.cfg')
-        defaults = config['DEFAULT']
-        with open(defaults['KNOB'], 'r', encoding='utf-8') as f:
+        with open(hint['KNOB'], 'r', encoding='utf-8') as f:
             return [line.replace('\n', '') for line in f.readlines()]
 
 if __name__ == '__main__':

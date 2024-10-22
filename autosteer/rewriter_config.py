@@ -10,7 +10,7 @@ from utils.custom_logging import logger
 from utils.config import read_config
 
 default = read_config()['DEFAULT']
-THRESHOLD=default['THRESHOLD']
+THRESHOLD=eval(default['THRESHOLD'])
 MAX_DP_DEPTH = 3  # Define early termination of the dynamic-programming exploration.
 
 

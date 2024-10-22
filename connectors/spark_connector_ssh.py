@@ -1,5 +1,3 @@
-from pyhive import hive
-import time
 import re
 from utils.custom_logging import logger
 from connectors.connector import DBConnector
@@ -8,6 +6,10 @@ import re
 import sqlparse
 from sqlparse.tokens import DML
 import paramiko
+from utils.config import read_config
+
+connection = read_config()['CONNECTION']
+hint = read_config()['HINT']
 
 EXCLUDED_RULES = 'spark.sql.optimizer.excludedRules'
 
@@ -122,7 +124,7 @@ class SparkConnector(DBConnector):
             try:
                 client = paramiko.SSHClient()
                 client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                client.connect('192.168.90.173', 22, 'root', 'root')
+                client.connect(f"{connection['SSH_URL']}', 22, {connection['SSH_USERNAME']}, {connection['SSH_PASSWORD']}")
                 stdin, stdout, stderr = client.exec_command(exe_command)
                 out = str(stdout.read().decode())
                 err = str(stderr.read().decode())
@@ -166,7 +168,7 @@ class SparkConnector(DBConnector):
     def clear_cache(self):  #### 1
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-        client.connect('192.168.90.173', 22, 'root', 'root')
+        client.connect(f"{connection['SSH_URL']}', 22, {connection['SSH_USERNAME']}, {connection['SSH_PASSWORD']}")
         stdin, stdout, stderr = client.exec_command("echo 3 > /proc/sys/vm/drop_caches;free -g")
         out = str(stdout.read().decode())
         logger.info('clean cache:')
@@ -230,8 +232,7 @@ class SparkConnector(DBConnector):
         """Static method returning all knobs defined for this connector"""
         config = configparser.ConfigParser()
         config.read('./config.cfg')
-        defaults = config['DEFAULT']
-        with open(defaults['KNOB'], 'r', encoding='utf-8') as f:
+        with open(hint['KNOB'], 'r', encoding='utf-8') as f:
             return [line.replace('\n', '') for line in f.readlines()]
 
 if __name__ == '__main__':

@@ -44,12 +44,9 @@ def register_rewrite_config_and_measurement(query_path, rewrite_rules, rewrite_s
         storage.register_rewrite_measurement(query_path, rewrite_rules, walltime=timed_result.time_usecs, input_data_size=0, nodes=1)
     return is_duplicate
 
-def explore_rewrite_configs(connector: connectors.connector.DBConnector, query_path):
+def explore_rewrite_configs(connector: connectors.connector.DBConnector, sql_query, query_path):
     """Use dynamic programming to find good rewrite configs"""
-    query_path = 'benchmark/queries/' + query_path
     logger.info('Start exploring rewrite configs for query %s', query_path)
-    sql_query = read_sql_file(query_path)
-
     rewrite_exploration = RewriteExploration(query_path)
     num_duplicate_plans = 0
     sql_query_raw = sql_query
@@ -111,11 +108,11 @@ def execute_rewrite_set(config: RewriteExploration, connector: connectors.connec
             if timed_result is not None and not storage.register_query_fingerprint(query_path, result_fingerprint):
                 logger.warning('Result fingerprint=%s does not match existing fingerprint!', result_fingerprint)
                 raise
-        # pylint: disable=broad-except
-        except:
+        # # pylint: disable=broad-except
+        except Exception as e:
             logger.fatal(sql_query)
+            logger.error(e)
             logger.fatal('Rewrite rule %s cannot be used for %s, ignoring...', config.get_disabled_opts_rules(), query_path)
-            # timed_result = connector.TimedResult('FAILED', 60_000_000)
             break
 
         if register_rewrite_config_and_measurement(query_path, config.get_disabled_opts_rules(), sql_query, query_plan, timed_result):

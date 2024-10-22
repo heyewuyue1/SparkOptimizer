@@ -10,6 +10,7 @@ import connectors
 from utils.arguments_parser import get_parser
 from utils.custom_logging import logger
 from utils.config import read_config
+from utils.util import read_sql_file
 from autosteer.dp_exploration import explore_optimizer_configs, explore_rewrite_configs
 from autosteer.query_span import run_get_query_span
 from autosteer.rewrite_span import run_get_rewrite_span
@@ -37,10 +38,10 @@ def approx_query_span_and_run(connector: Type[connectors.connector.DBConnector],
     explore_optimizer_configs(connector, query_path, sql, rewrite_method)
 
 
-def approx_rewrite_span_and_run(connector: Type[connectors.connector.DBConnector], benchmark: str, query: str):
-    run_get_rewrite_span(connector, benchmark, query)
+def approx_rewrite_span_and_run(connector: Type[connectors.connector.DBConnector], sql, query: str):
+    run_get_rewrite_span(connector, sql, query)
     connector = connector()
-    explore_rewrite_configs(connector, f'{benchmark}/{query}')
+    explore_rewrite_configs(connector, sql, query)
 
 
 def check_and_load_database():
@@ -70,7 +71,7 @@ if __name__ == '__main__':
                      default['BENCHMARK'])
         sys.exit(1)
     # storage.BENCHMARK_ID = storage.register_benchmark(default['BENCHMARK'])
-    f_list = sorted(os.listdir('benchmark/queries/' + default['BENCHMARK']))  # 测试全部sql
+    f_list = sorted(os.listdir('benchmark/queries/' + default['BENCHMARK']))[:5]  # 测试全部sql
     logger.info('Found the following SQL files: %s', f_list)
 
     ### test
@@ -160,7 +161,9 @@ if __name__ == '__main__':
                 logger.info('Rewrite Method: greedy')
                 for query in f_list:
                     logger.info('Rewriting %s...', query)
-                    approx_rewrite_span_and_run(SparkConnector, default['BENCHMARK'], query)
+                    sql = read_sql_file(f"benchmark/queries/{default['benchmark']}/{query}")
+                    storage.register_query(query, sql)
+                    approx_rewrite_span_and_run(SparkConnector, sql, query)
                 best_rewrites = storage.save_best_rewrite()
                 best_rewrites.to_csv(config['REWRITE']['REWRITE_EXP'], sep=';', index_label='id')
                 logger.info(f'Saved best rewrites to {config["REWRITE"]["REWRITE_EXP"]}')
@@ -187,9 +190,8 @@ if __name__ == '__main__':
                 logger.info('Using original sql as input to genenrate corresponding hint')
                 sql_list = []
                 for query in f_list:
-                    with open(f'benchmark/queries/{default["benchmark"]}/{query}') as f:
-                        sql = f.read().strip()
-                        sql_list.append(sql)
+                    sql = read_sql_file(f'benchmark/queries/{default["benchmark"]}/{query}')
+                    sql_list.append(sql)
             logger.info(f'total sql: {len(sql_list)}')
             for i in range(sql_list):
                 logger.info(f'Optimizing sql_list[{i}]...')

@@ -28,12 +28,9 @@ rule_list = ['AGGREGATE_EXPAND_DISTINCT_AGGREGATES', 'AGGREGATE_EXPAND_DISTINCT_
                  'SORT_FETCH_ZERO_INSTANCE', 'UNION_MERGE', 'UNION_REMOVE', 'UNION_TO_DISTINCT',
                  'UNION_PULL_UP_CONSTANTS', 'UNION_INSTANCE', 'INTERSECT_INSTANCE', 'MINUS_INSTANCE']
 
-def run_get_rewrite_span(connector_type, benchmark, query):
-    query_path = f'benchmark/queries/{benchmark}/{query}'
-    logger.info('Approximate rewrite span for query: %s', query_path)
-    sql = storage.read_sql_file(query_path)
-    storage.register_query(query_path, sql)
+def run_get_rewrite_span(connector_type, sql, query_path):
 
+    logger.info('Approximate rewrite span for query: %s', query_path)
     rewrite_span = approximate_rewrite_span(connector_type, sql, call_rewriter)
 
     # Serialize the approximated query span in the database

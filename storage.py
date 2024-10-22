@@ -14,14 +14,13 @@ from sqlalchemy.sql import text
 from sqlalchemy.exc import IntegrityError
 import unittest
 
-from utils.custom_logging import setup_custom_logger
+from utils.custom_logging import logger
 from utils.util import read_sql_file
 from utils.config import read_config
 SCHEMA_FILE = 'schema.sql'
 ENGINE = None
 TESTED_DATABASE = read_config()['DEFAULT']['STORAGE']
-BENCHMARK_ID = None
-logger = setup_custom_logger('STORAGE')
+BENCHMARK_ID = read_config()['DEFAULT']['BENCHMARK']
 
 def _db():
     global ENGINE
@@ -397,17 +396,27 @@ def save_best_rewrite():
                             )
                             group by q.id, q.sql, qrc.rewrite_sql;
                             '''
-        return pd.read_sql(get_best_stmt, conn)
+        best_rewrites = pd.read_sql(get_best_stmt, conn)
+        best_rewrites['sql'] = best_rewrites['sql'].str.strip('"').str.rstrip(';').str.replace(r'\s+', ' ', regex=True)
+        best_rewrites['rewrite_sql'] = best_rewrites['rewrite_sql'].str.strip('"').str.rstrip(';').str.replace(r'\s+', ' ', regex=True)
+        best_rewrites = best_rewrites[best_rewrites['sql'] != best_rewrites['rewrite_sql']].reset_index(drop=True)
+        return best_rewrites
     
 def save_best_predicate_rewrite():
     with _db() as conn:
         get_best_stmt = '''select query sql, rewrite_query rewrite_sql from predicate_rewrites'''
-        return pd.read_sql(get_best_stmt, conn)
+        best_rewrites = pd.read_sql(get_best_stmt, conn)
+        best_rewrites['sql'] = best_rewrites['sql'].str.strip('"').str.rstrip(';').str.replace(r'\s+', ' ', regex=True)
+        best_rewrites['rewrite_sql'] = best_rewrites['rewrite_sql'].str.strip('"').str.rstrip(';').str.replace(r'\s+', ' ', regex=True)
+        return best_rewrites
     
 def save_best_mv_rewrite():
     with _db() as conn:
         get_best_stmt = '''select query sql, rewrite_query rewrite_sql from mv_rewrites'''
-        return pd.read_sql(get_best_stmt, conn)
+        best_rewrites = pd.read_sql(get_best_stmt, conn)
+        best_rewrites['sql'] = best_rewrites['sql'].str.strip('"').str.rstrip(';').str.replace(r'\s+', ' ', regex=True)
+        best_rewrites['rewrite_sql'] = best_rewrites['rewrite_sql'].str.strip('"').str.rstrip(';').str.replace(r'\s+', ' ', regex=True)
+        return best_rewrites
 
 def save_best_optimization():
     with _db() as conn:
@@ -462,4 +471,5 @@ class TestStorage(unittest.TestCase):
             print(result.fetchall())
 
 if __name__ == '__main__':
-    print(save_best_rewrite())
+    best_rewrites = save_best_rewrite()
+    best_rewrites.to_csv(read_config()['REWRITE']['REWRITE_EXP'], sep=';', index_label='id')
