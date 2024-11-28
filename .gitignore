@@ -1,5 +1,7 @@
 playground/
+!playground/test_scipt.py
 data/*.pkl
+data/*.csv
 data/forest.csv
 evaluation/*
 logs/

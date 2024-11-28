@@ -1,11 +1,23 @@
-# Copyright 2022 Intel Corporation
-# SPDX-License-Identifier: MIT
-#
-"""Provide utility functions in this mode"""
-
 import operator
 from functools import reduce
 import hashlib
+import paramiko
+from utils.custom_logging import logger
+
+def check_and_load_database(database):
+    hostname = '192.168.90.173'
+    port = 22
+    username = 'root'
+    password = 'root'
+    # 创建SSH客户端
+    client = paramiko.SSHClient()
+    # 自动添加主机密钥
+    client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    # 连接远程主机
+    client.connect(hostname, port, username, password)
+    logger.info(f'check and load database {database}...')
+    stdin, stdout, stderr = client.exec_command(f'spark-sql -e "use {database}";')
+    logger.info(f'load database {database} successfully')
 
 def read_sql_file(filename, encoding='utf-8') -> str:
     """Read SQL file, remove comments, and return a list of sql statements as a string"""

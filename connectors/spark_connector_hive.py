@@ -1,18 +1,18 @@
 from pyhive import hive
 import time
 import re
-from utils.custom_logging import setup_custom_logger
+from utils.custom_logging import logger
 from connectors.connector import DBConnector
 import configparser
 import re
 import sqlparse
 from sqlparse.tokens import DML
 from utils.config import read_config
+from TCLIService.ttypes import TOperationState
 
 connection = read_config()['CONNECTION']
 hint = read_config()['HINT']
 
-logger = setup_custom_logger('CONNECTOR')
 EXCLUDED_RULES = 'spark.sql.optimizer.excludedRules'
 
 def _postprocess_plan(plan) -> str:
@@ -79,13 +79,19 @@ class SparkConnector(DBConnector):
             except:
                 logger.warning(f'Atempt {i + 1} Failed to connect to thrift server, retrying...')
         self.cursor = self.conn.cursor()
+        self.execute(f"SET spark.sql.thriftServer.queryTimeout={connection['TIMEOUT']}")
 
     def execute(self, query) -> DBConnector.TimedResult:
         max_retry = eval(connection['MAX_RETRY'])
         for i in range(max_retry):
             try:
                 begin = time.time_ns()
-                self.cursor.execute(query)
+                self.cursor.execute(query, _async=True)
+                status = self.cursor.poll().operationState
+                while status in (TOperationState.INITIALIZED_STATE, TOperationState.RUNNING_STATE):
+                    self.cursor.fetch_logs()
+                    status = self.cursor.poll().operationState
+                assert status in [TOperationState.INITIALIZED_STATE, TOperationState.RUNNING_STATE, TOperationState.FINISHED_STATE]
                 collection = self.cursor.fetchall()
                 elapsed_time_usecs = int((time.time_ns() - begin) / 1_000)
                 break

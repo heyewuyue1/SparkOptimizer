@@ -7,7 +7,7 @@ select case when (select count(*)
                   where ss_quantity between 1 and 20) 
             else (select avg(ss_net_profit)
                   from store_sales
-                  where ss_quantity between 1 and 20) end bucket1 ,
+                  where ss_quantity between 1 and 20) end bucket1,
        case when (select count(*)
                   from store_sales
                   where ss_quantity between 21 and 40) > 24804257

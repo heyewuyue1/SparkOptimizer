@@ -1,7 +1,3 @@
-# Copyright 2022 Intel Corporation
-# SPDX-License-Identifier: MIT
-#
-"""Allows to easily access AutoSteer's config"""
 import configparser
 
 

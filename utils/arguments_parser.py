@@ -1,9 +1,4 @@
-# Copyright 2022 Intel Corporation
-# SPDX-License-Identifier: MIT
-#
-"""Parser for the arguments passed to the benchmark driver"""
 import argparse
-
 
 def get_parser():
     parser = argparse.ArgumentParser(description='CLI for SparkOptimizer')

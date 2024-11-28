@@ -17,6 +17,9 @@ import unittest
 from utils.custom_logging import logger
 from utils.util import read_sql_file
 from utils.config import read_config
+import csv
+import re
+
 SCHEMA_FILE = 'schema.sql'
 ENGINE = None
 TESTED_DATABASE = read_config()['DEFAULT']['STORAGE']
@@ -314,13 +317,42 @@ def register_rewrite_measurement(query_path, rewrite_rules, walltime, input_data
         conn.execute(query, walltime=walltime, host=socket.gethostname(), time=now.strftime('%Y-%m-%d,%H:%M:%S'), input_data_size=input_data_size, nodes=nodes,
                      query_path=query_path, rewrite_rules=str(rewrite_rules))
         
-def register_mv_rewrite(query, create_mv, rewrite_query):
+
+def register_create_mv_statement(mv_name, subq):
+    subq = subq.replace(') x', ') ')
+    subq = subq.replace(' + ', '+')
+    subq = subq.replace(' = ', '=')
+    subq = re.sub(r'\s+', ' ', subq)
     with _db() as conn:
         reg_query = '''
-                INSERT INTO mv_rewrites (query, create_mv, rewrite_query)
-                VALUES (:query, :create_mv, :rewrite_query)
+                INSERT INTO create_mv_statement (mv_name, subq)
+                VALUES (:mv_name, :subq)
                 '''
-        conn.execute(reg_query, query=query, create_mv=create_mv, rewrite_query=rewrite_query)
+        conn.execute(reg_query, mv_name=mv_name, subq=subq)
+
+def mv_query_exists(subq):
+    subq = subq.replace(') x', ') ')
+    subq = subq.replace(' + ', '+')
+    subq = subq.replace(' = ', '=')
+    subq = re.sub(r'\s+', ' ', subq)
+    subq = re.sub(r'query(\d+)b_(\d+)', r'query\1a_\2', subq)
+    with _db() as conn:
+        reg_query = '''
+                    SELECT subq FROM create_mv_statement;                  
+                    '''
+        all_subq = pd.read_sql(reg_query, conn)
+    if subq in all_subq['subq'].values:
+        return True
+    return False
+        
+def register_mv_rewrite(query, rewrite_query):
+    rewrite_query = re.sub(r'query(\d+)b_(\d+)', r'query\1a_\2', rewrite_query)
+    with _db() as conn:
+        reg_query = '''
+                INSERT INTO mv_rewrites (query, rewrite_query)
+                VALUES (:query, :rewrite_query)
+                '''
+        conn.execute(reg_query, query=query, rewrite_query=rewrite_query)
 
 def register_predicate_rewrite(query, rewrite_query):
     with _db() as conn:
@@ -397,8 +429,8 @@ def save_best_rewrite():
                             group by q.id, q.sql, qrc.rewrite_sql;
                             '''
         best_rewrites = pd.read_sql(get_best_stmt, conn)
-        best_rewrites['sql'] = best_rewrites['sql'].str.strip('"').str.rstrip(';').str.replace(r'\s+', ' ', regex=True)
-        best_rewrites['rewrite_sql'] = best_rewrites['rewrite_sql'].str.strip('"').str.rstrip(';').str.replace(r'\s+', ' ', regex=True)
+        best_rewrites['sql'] = '"' + best_rewrites['sql'].str.replace(';', '').str.replace(r'\s+', ' ', regex=True).str.strip() + '"'
+        best_rewrites['rewrite_sql'] = '"' + best_rewrites['rewrite_sql'].str.replace(';', '').str.replace(r'\s+', ' ', regex=True).str.strip() + '"'
         best_rewrites = best_rewrites[best_rewrites['sql'] != best_rewrites['rewrite_sql']].reset_index(drop=True)
         return best_rewrites
     
@@ -406,17 +438,25 @@ def save_best_predicate_rewrite():
     with _db() as conn:
         get_best_stmt = '''select query sql, rewrite_query rewrite_sql from predicate_rewrites'''
         best_rewrites = pd.read_sql(get_best_stmt, conn)
-        best_rewrites['sql'] = best_rewrites['sql'].str.strip('"').str.rstrip(';').str.replace(r'\s+', ' ', regex=True)
-        best_rewrites['rewrite_sql'] = best_rewrites['rewrite_sql'].str.strip('"').str.rstrip(';').str.replace(r'\s+', ' ', regex=True)
+        best_rewrites['sql'] = '"' + best_rewrites['sql'].str.replace(';', '').str.replace(r'\s+', ' ', regex=True).str.strip() + '"'
+        best_rewrites['rewrite_sql'] = '"' + best_rewrites['rewrite_sql'].str.replace(';', '').str.replace(r'\s+', ' ', regex=True).str.strip() + '"'
         return best_rewrites
     
 def save_best_mv_rewrite():
     with _db() as conn:
         get_best_stmt = '''select query sql, rewrite_query rewrite_sql from mv_rewrites'''
         best_rewrites = pd.read_sql(get_best_stmt, conn)
-        best_rewrites['sql'] = best_rewrites['sql'].str.strip('"').str.rstrip(';').str.replace(r'\s+', ' ', regex=True)
-        best_rewrites['rewrite_sql'] = best_rewrites['rewrite_sql'].str.strip('"').str.rstrip(';').str.replace(r'\s+', ' ', regex=True)
+        best_rewrites['sql'] = '"' + best_rewrites['sql'].str.replace(';', '').str.replace(r'\s+', ' ', regex=True).str.strip() + '"'
+        best_rewrites['rewrite_sql'] = '"' + best_rewrites['rewrite_sql'].str.replace(';', '').str.replace(r'\s+', ' ', regex=True).str.strip() + '"'
         return best_rewrites
+    
+def get_subq(mv_name):
+    get_subq_stmt = '''SELECT mv_name, subq 
+                    FROM create_mv_statement 
+                    WHERE mv_name LIKE :mv_name || '%';'''
+    subq = get_df(get_subq_stmt, params={"mv_name": mv_name}).values
+    return subq
+
 
 def save_best_optimization():
     with _db() as conn:
@@ -432,7 +472,10 @@ def save_best_optimization():
                             )
                             group by q.id, q.sql, qoc.disabled_rules;
                             '''
-        return pd.read_sql(get_best_stmt, conn)
+        best_optimizations = pd.read_sql(get_best_stmt, conn)
+        best_optimizations['sql'] = '"' + best_optimizations['sql'].str.replace(';', '').str.replace(r'\s+', ' ', regex=True) + '"'
+        best_optimizations['knobs'] = '"' + best_optimizations['knobs'].str.replace(';', '').str.replace(r'\s+', ' ', regex=True)+ '"'
+        return best_optimizations
 
 def get_best_optimizers():
     with _db() as conn:
@@ -471,5 +514,5 @@ class TestStorage(unittest.TestCase):
             print(result.fetchall())
 
 if __name__ == '__main__':
-    best_rewrites = save_best_rewrite()
-    best_rewrites.to_csv(read_config()['REWRITE']['REWRITE_EXP'], sep=';', index_label='id')
+    best_rewrites = save_best_optimization()
+    best_rewrites.to_csv(read_config()['HINT']['HINT_EXP'], sep=';', index_label='id', quoting=csv.QUOTE_NONE, escapechar='\\')

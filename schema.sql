@@ -84,10 +84,15 @@ CREATE TABLE IF NOT EXISTS rewrite_measurements (
     num_compute_nodes INTEGER NOT NULL
 );
 --------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS create_mv_statement (
+    id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+    mv_name TEXT NOT NULL,
+    subq TEXT NOT NULL
+);
+--------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS mv_rewrites (
     id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
     query TEXT NOT NULL,
-    create_mv TEXT NOT NULL,
     rewrite_query TEXT NOT NULL
 );
 --------------------------------------------------------------------------------

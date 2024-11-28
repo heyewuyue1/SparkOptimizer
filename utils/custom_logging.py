@@ -1,7 +1,3 @@
-# Copyright 2022 Intel Corporation
-# SPDX-License-Identifier: MIT
-#
-"""Define a custom logger for AutoSteer"""
 import sys
 import logging
 import datetime
@@ -21,4 +17,4 @@ def setup_custom_logger(name):
     return custom_logger
 
 
-logger = setup_custom_logger('AUTOSTEER')
+logger = setup_custom_logger('OPTIMIZER')
