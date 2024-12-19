@@ -46,6 +46,7 @@ def pre_process(sql):
     sql = sql.replace('31_60days', '"31_60days"')
     sql = sql.replace('61_90days', '"61_90days"')
     sql = sql.replace('91_120days', '"91_120days"')
+    sql = sql.replace("' calcite_year ", "' year ")
 
     pattern_iif = r'IIF\((.*?),\s+(.*?),\s+(.*?)\)'
     matches_iif = re.findall(pattern_iif, sql)
@@ -88,17 +89,19 @@ def call_rewriter(args: tuple):
     output, error = process.communicate(input=input_string)
 
     # rew = output.replace("\u001B[32m", '').replace("\u001B[0m", '')
+    
     output = output.replace("\u001B[32m", '').replace("\u001B[0m", '').split('\n')
     ind = 0
+    
+    if 'No changed!' in output:
+        hintset.plan = sql_input
+        return hintset
     for i in output:
         if not i.startswith('SELECT') and not i.startswith('select') and not i.startswith('with ') and not i.startswith('WITH '):
             continue
         else:
             ind = output.index(i)
             break
-    if output[ind-1] == 'No changed!':
-        hintset.plan = sql_input
-        return hintset
     
     queries = output[ind:-3]
     output = ' '.join(queries).replace('"', '')
@@ -107,9 +110,10 @@ def call_rewriter(args: tuple):
         hintset.plan = post_process(output)
         return hintset
     else:
-        logger.error(f'Input: {sql_input}')
-        logger.error(f"Output: {output}")
-        logger.error(f"Error: {error}")
+        logger.error(f'Some error occurred during rewriting')
+        logger.debug(f'Input: {sql_input}')
+        logger.debug(f"Output: {output}")
+        logger.debug(f"Error: {error}")
         hintset.plan = 'NA'
         return hintset
 
@@ -126,17 +130,18 @@ def rewrite(args: tuple):
     # Wait for the subprocess to finish and capture the output
     output, error = process.communicate(input=input_string)
 
-    rew = output.replace("\u001B[32m", '').replace("\u001B[0m", '')
     output = output.replace("\u001B[32m", '').replace("\u001B[0m", '').split('\n')
     ind = 0
+
+    if 'No changed!' in output:
+        return sql_input
     for i in output:
         if not i.startswith('SELECT') and not i.startswith('select') and not i.startswith('with ') and not i.startswith('WITH '):
             pass
         else:
             ind = output.index(i)
             break
-    if output[ind-1] == 'No changed!':
-        return sql_input
+    
     # logger.debug(f'raw output: {rew}')
     
     queries = output[ind:-3]
@@ -146,8 +151,8 @@ def rewrite(args: tuple):
         # change the functions edited to fit calcite back to original ones
         return post_process(output)
     else:
-        logger.error(f'Input: {sql_input}')
-        logger.error(f"Output: {output}")
-        logger.error(f"Error: {error}")
-        hintset.plan = 'NA'
+        logger.error(f'Some error occurred during rewriting')
+        logger.debug(f'Input: {sql_input}')
+        logger.debug(f"Output: {output}")
+        logger.debug(f"Error: {error}")
         return 'NA'

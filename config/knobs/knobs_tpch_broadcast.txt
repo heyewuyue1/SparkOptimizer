@@ -1,0 +1,8 @@
+Broadcast PART
+Broadcast SUPPLIER
+Broadcast PARTSUPP
+Broadcast CUSTOMER
+Broadcast ORDERS
+Broadcast LINEITEM
+Broadcast NATION
+Broadcast REGION

@@ -81,8 +81,9 @@ class SparkConnector(DBConnector):
         self.cursor = self.conn.cursor()
         self.execute(f"SET spark.sql.thriftServer.queryTimeout={connection['TIMEOUT']}")
 
-    def execute(self, query) -> DBConnector.TimedResult:
+    def execute(self, query, want_result=False) -> DBConnector.TimedResult:
         max_retry = eval(connection['MAX_RETRY'])
+        time_out_seconds = int(connection['TIMEOUT'][:-1])
         for i in range(max_retry):
             try:
                 begin = time.time_ns()
@@ -91,14 +92,20 @@ class SparkConnector(DBConnector):
                 while status in (TOperationState.INITIALIZED_STATE, TOperationState.RUNNING_STATE):
                     self.cursor.fetch_logs()
                     status = self.cursor.poll().operationState
+                    if time.time_ns() - begin > time_out_seconds * 1_200_000_000:
+                        logger.warning(f'Query execution time exceeds {time_out_seconds} * 1.2 seconds but still running. Current Status: {status}')
+                        break
                 assert status in [TOperationState.INITIALIZED_STATE, TOperationState.RUNNING_STATE, TOperationState.FINISHED_STATE]
-                collection = self.cursor.fetchall()
+                if want_result:
+                    collection = self.cursor.fetchall()
+                else:
+                    collection = []
                 elapsed_time_usecs = int((time.time_ns() - begin) / 1_000)
                 break
             except Exception as e:
                 if i == max_retry - 1:
                     logger.fatal(f'Execution failed {max_retry} times.')
-                    logger.debug(str(e)[:1000])
+                    logger.warning(str(e.args[0].status.errorMessage).split('\n')[0])
                     raise
                 else:
                     logger.warning('Execution failed %s times, try again...', str(i + 1))
@@ -109,7 +116,7 @@ class SparkConnector(DBConnector):
         return DBConnector.TimedResult(collection, elapsed_time_usecs)
 
     def explain(self, query) -> str:
-        timed_result = self.execute(f'EXPLAIN FORMATTED {query}')
+        timed_result = self.execute(f'EXPLAIN FORMATTED {query}', want_result=True)
         return _postprocess_plan(timed_result.result[0][0])
     
     def clear_cache(self):

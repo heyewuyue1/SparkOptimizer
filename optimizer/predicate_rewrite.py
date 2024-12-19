@@ -1,11 +1,15 @@
 import os
 import sqlparse
+import sys
 import math
+sys.path.append('/Users/a/Documents/SparkOptimizer/')
 from utils.custom_logging import logger
 from utils.config import read_config
 from utils.util import read_sql_file
 from storage import register_predicate_rewrite
+from connectors.spark_connector_hive import SparkConnector
 default = read_config()['DEFAULT']
+rewrite = read_config()['REWRITE']
 
 def get_sqls(path):
     f_list = sorted(os.listdir(path))
@@ -19,18 +23,30 @@ def get_sqls(path):
     return sql_list
 
 def find_main_where(tokens):
+    parenthesis_level = 0
     current_pos = 0
     for token in tokens:
-        if token.value.upper().startswith('WHERE'):
+        if token.ttype in (sqlparse.tokens.Punctuation,) and token.value == '(':
+            parenthesis_level += 1
+        elif token.ttype in (sqlparse.tokens.Punctuation,) and token.value == ')':
+            parenthesis_level -= 1
+        elif token.value.upper().startswith('WHERE') and parenthesis_level == 0:
             return current_pos
+
         current_pos += len(str(token))
     return -1
 
 def find_main_select(tokens):
+    parenthesis_level = 0
     current_pos = 0
     for token in tokens:
-        if token.value.upper().startswith('SELECT'):
+        if token.ttype in (sqlparse.tokens.Punctuation,) and token.value == '(':
+            parenthesis_level += 1
+        elif token.ttype in (sqlparse.tokens.Punctuation,) and token.value == ')':
+            parenthesis_level -= 1
+        elif token.value.upper() == 'SELECT' and parenthesis_level == 0:
             return current_pos
+
         current_pos += len(str(token))
     return -1
 
@@ -123,30 +139,60 @@ def find_selected_cols(sql, sel_loc, from_loc):
         raw_list[i] = raw_list[i].strip()
     return raw_list
 
+def make_alias_dict(selected_cols):
+    alias_dict = {}
+    for col in selected_cols:
+        if ' as ' in col:
+            alias_dict[col.split(' as ')[1].strip()] = col.split(' as ')[0].strip()
+        elif ' AS ' in col:
+            alias_dict[col.split(' AS ')[1].strip()] = col.split(' AS ')[0].strip()
+        elif len(col.split()) == 2:
+            alias_dict[col.split()[1]] = col.split()[0]
+    return alias_dict
+
+def find_numerical_col(sql, conn):
+    try:
+        result = conn.execute(f'DESC QUERY {sql}', want_result=True).result
+    except:
+        return []
+    col = []
+    for row in result:
+        if row[1] == 'bigint' or row[1].startswith('decimal') or row[1] == 'double':
+            col.append(row[0])
+    
+    return col
+
 def agg_in_cols(col_list):
     for col in col_list:
         if '(' in col and ')' in col:
             return True
     return False
 
-def modify(sql):
+def modify(sql, conn):
     sql = sqlparse.format(sql, strip_comments=True)
-    parsed = sqlparse.parse(sql)
-    for statement in parsed:
-        sel_loc = find_main_select(statement.tokens)
-        from_loc = find_main_from(statement.tokens)
-        selected_cols = find_selected_cols(sql, sel_loc, from_loc)
-        by_str = find_main_group_by(statement.tokens)
-        if sel_loc == -1 or from_loc == -1:
-            logger.warning(f'Main select or from not found in query: {sql}, sel_loc: {sel_loc}, from_loc: {from_loc}')
-        by_str = by_str.strip()
-        if (agg_in_cols(selected_cols) and by_str == '*') or by_str == '':
-            return sql
-        if 'rollup' in by_str:
-            by_str = by_str.strip().split('rollup')[1][1:-1]
-        modified_sql = sql[:sel_loc+6] + ' ' + by_str + ', ' + sql[sel_loc + 6:]
-    return modified_sql
-    
+    statement = sqlparse.parse(sql)[0]
+    sel_loc = find_main_select(statement.tokens)
+    from_loc = find_main_from(statement.tokens)
+    selected_cols = find_selected_cols(sql, sel_loc, from_loc)
+    alias_dict = make_alias_dict(selected_cols)
+    num_col = find_numerical_col(sql, conn)
+    num_col_without_agg = []
+    for i in range(len(num_col)):
+        if num_col[i] in alias_dict:
+            if not '(' in alias_dict[num_col[i]]:
+                num_col_without_agg.append(num_col[i])
+        else:
+            if not '(' in num_col[i]:
+                num_col_without_agg.append(num_col[i])
+    if len(num_col_without_agg) == 0:
+        return sql, alias_dict
+    min_max_list = []
+    for col in num_col_without_agg:
+        min_max_list.append(f'MIN({col}) as min_{col}, MAX({col}) as max_{col}')
+    min_max_str = ',\n'.join(min_max_list)
+    modified_sql = f'SELECT \n{min_max_str} \nFROM ({sql})'
+    return modified_sql, alias_dict
+
 def get_min_max_str_of_ith_col(result, i): 
     min = float('inf')
     max = float('-inf')
@@ -165,17 +211,34 @@ def get_min_max_str_of_ith_col(result, i):
             return None
     return min, max, set_i
 
-def generate_min_max_from_result(result, conn): 
-    if result == 'EmptyResult':
-        return {}
+def generate_min_max_from_result(result, alias_dict, conn): 
     cols = [desc[0] for desc in conn.cursor.description]
     min_max_dict = {}
     for i in range(len(cols)):
-        if not '(' in cols[i] and not ')' in cols[i]: 
-            min_max_str = get_min_max_str_of_ith_col(result, i)
-            if min_max_str is not None and ((min_max_str[0] != float('inf') and min_max_str[1] != float('-inf')) or len(min_max_str[2])>0):
-                min_max_dict[cols[i]] = min_max_str
+        col_name = cols[i][4:]
+        if col_name in alias_dict:
+            col_name = alias_dict[col_name]
+        if col_name not in min_max_dict:
+            min_max_dict[col_name] = [float('inf'), float('-inf'), set()]
+        if cols[i].startswith('min_'):
+            min_max_dict[col_name][0] = result[0][i]
+        if cols[i].startswith('max_'):
+            min_max_dict[col_name][1] = result[0][i]
     return min_max_dict
+
+def tranverse_generate_min_max_from_result(structure, conn):
+    def tranverse(cur_structure):
+        try:
+            result = conn.execute(cur_structure['query']).result
+        except:
+            cur_structure['min_max'] = {}
+            logger.error(f'Modified version of {query} failed, Skipping this one...')
+            return
+        min_max_dict = generate_min_max_from_result(result, conn)
+        cur_structure['min_max'] = min_max_dict
+        for subquery in cur_structure['subqueries']:
+            tranverse(subquery)
+    tranverse(structure)
 
 def add_predicate(sql, min_max_dict): 
     statement = sqlparse.parse(sql)[0]
@@ -194,7 +257,7 @@ def add_predicate(sql, min_max_dict):
             if col in agg_cols:
                 having_list.append(f'{col} >= {math.floor(min_val)} and {col} <= {math.ceil(max_val)}')
             else:
-                predicate_list.append(f'{col} >= {math.floor(min_val)} and {col} <= {math.ceil(max_val)}')
+                predicate_list.append(f'{col} between {math.floor(min_val)} and {math.ceil(max_val)}')
         if len(str_set) > 1: # null
             str_set = tuple(str_set)
             if col in agg_cols:
@@ -233,32 +296,148 @@ def add_predicate(sql, min_max_dict):
                 sql = sql[:where_position+5] + ' ' + pred_str + ' ' + sql[where_position+5:]
     return sql
 
+def tranverse_add_predicate(structure):
+    def tranverse(cur_structure):
+        modified_sql = add_predicate(cur_structure['query'], cur_structure['min_max'])
+        cur_structure['rewrite'] = modified_sql
+        for subquery in cur_structure['subqueries']:
+            tranverse(subquery)
+    tranverse(structure)
+
+def parse_sub_query(sql):
+    def find_subqueries(query, start_id):
+        subqueries = []
+        parsed = sqlparse.parse(query)[0]
+        if 'with' in query.lower():
+            sel_loc = find_main_select(parsed.tokens)
+            begin = query.find('(')
+            p_level = 1
+            j = begin
+            for i in range(begin + 1, sel_loc):
+                if query[i] == '(':
+                    p_level += 1
+                    if p_level == 1:
+                        j = i
+                elif query[i] == ')':
+                    p_level -= 1
+                    if p_level == 0:
+                        subqueries.append({
+                            'id': start_id,
+                            'begin': j+1,
+                            'query': query[j+1:i],
+                            'subqueries': find_subqueries(query[j+1:i], start_id + 1),
+                        })
+            parsed = sqlparse.parse(query[sel_loc:])[0]
+        # 使用sqlparse找出所有完整括号包裹的表达式，排除括号中不包含select的情况
+        for token in parsed.tokens:
+            if token.is_group:
+                subquery = token.value
+                if 'select' in subquery.lower():
+                    #找出subquery中第一次(和最后一次)出现的位置，以此为依据递归查找subquery
+                    first_paren = subquery.find('(')
+                    last_paren = subquery.rfind(')')
+                    if first_paren != -1 and last_paren != -1:
+                        subquery = subquery[first_paren+1:last_paren]
+                    subqueries.append({
+                        'id': start_id,
+                        'begin': query.find(subquery),
+                        'query': subquery,
+                        'subqueries': find_subqueries(subquery, start_id + 1),
+                    })
+        return subqueries
+    return {
+            'id': 0,
+            'begin': 0,
+            'query': sql,
+            'subqueries': find_subqueries(sql, 1),
+        }
+
+def get_leaf_list(structure):
+    leaf_list = []
+    def tranverse(cur_structure):
+        if cur_structure['subqueries'] == []:
+            leaf_list.append({
+                'query': cur_structure['query'],
+                'modified': '',
+                'min_max': {},
+                'rewrite': '',
+            })
+        for subquery in cur_structure['subqueries']:
+            tranverse(subquery)
+    tranverse(structure)
+    return leaf_list
+
 def rewrite_and_test_syntax(connector, query):
         conn = connector()
         sql = read_sql_file(f'benchmark/queries/{default["BENCHMARK"]}/{query}')
-        modified_sql = modify(sql)
-        logger.debug(f'Modified into: {modified_sql}')
-        try:
-            res = conn.execute(modified_sql).result
-        except:
-            logger.error(f'Modified version of {query} failed, Skipping this one...')
-            return
-
-        min_max_dict = generate_min_max_from_result(res, conn)
+        structure = parse_sub_query(sql)
+        if rewrite['PRED_LEVEL'] == 'bottom':
+            # 只对叶子节点进行改写试试
+            leaf_list = get_leaf_list(structure)
+            for i in range(len(leaf_list)):
+                modified_sql, alias_dict = modify(leaf_list[i]['query'], conn)  # 没modify出*
+                if modified_sql == leaf_list[i]['query']:
+                    logger.info(f'No available min_max_info for {query}\'s {i}th subquery, skipping this one...')
+                    break
+                try:
+                    res = conn.execute(modified_sql, want_result=True).result
+                    leaf_list[i]['modified'] = modified_sql
+                except:
+                    logger.error(f'Modified version of {query}\'s {i}th subquery failed, Skipping this one...')
+                    break
+                min_max_dict = generate_min_max_from_result(res, alias_dict, conn)
+                if min_max_dict == {}:
+                    logger.info(f'No available min_max_info for {query}\'s {i}th subquery, skipping this one...')
+                    return
+                else:
+                    logger.info(f'Successfully generate min_max_dict for {query}\'s {i}th subquery')
+                    leaf_list[i]['min_max'] = min_max_dict
+                    pred_sql = add_predicate(leaf_list[i]['query'], min_max_dict)
+                    logger.debug(f'Rewrite {query}\'s {i}th subquery into: {pred_sql}')
+                    try:
+                        conn.execute(f'EXPLAIN FORMATTED {pred_sql}')  # 只能用EXPLAIN FORMATTED来检查语法
+                        leaf_list[i]['rewrite'] = pred_sql
+                        logger.info(f'Serialized a new predicate rewrite for {query}\'s {i}th subquery')
+                    except:
+                        logger.info(f'Rewrite version of {query}\'s {i}th subquery did not pass syntax check, skipping this one...')
+            org_sql = sql
+            for i in range(len(leaf_list)):
+                if leaf_list[i]['rewrite'] != '':
+                    sql = sql.replace(leaf_list[i]['query'], leaf_list[i]['rewrite'])
+            logger.debug(f'Rewrite {query} into: {sql}')
+        elif rewrite['PRED_LEVEL'] == 'top':
+            modified_sql, alias_dict = modify(sql, conn)
+            if modified_sql == sql:
+                logger.info(f'No available min_max_info for {query}, skipping this one...')
+                return
+            try:
+                res = conn.execute(modified_sql, want_result=True).result
+            except:
+                logger.error(f'Modified version of {query} failed, Skipping this one...')
+                return
+            min_max_dict = generate_min_max_from_result(res, alias_dict, conn)
+            if min_max_dict == {}:
+                logger.info(f'No available min_max_info for {query}, skipping this one...')
+                return
+            else:
+                logger.info(f'Successfully generate min_max_dict for {query}')
+            pred_sql = add_predicate(sql, min_max_dict)
+            logger.debug(f'Rewrite {query} into: {pred_sql}')
+            try:
+                conn.execute(pred_sql)  # 完整SQL可以直接execute检查语法
+                logger.info(f'Serialized a new predicate rewrite for {query}')
+            except:
+                logger.info(f'Rewrite version of {query} did not pass syntax check, skipping this one...')
+            org_sql = sql
+            sql = pred_sql
         
-
-        if min_max_dict == {}:
-            logger.info(f'No available predicate for {query}, skipping this one...')
-            return
-        else:
-            logger.info(f'Successfully generate predicates for {query}')
-            pred_sql = add_predicate(sql, min_max_dict)   
-        logger.debug(f'Rewrite into: {pred_sql}')
-        
         try:
-            conn.execute(pred_sql)
-            register_predicate_rewrite(sql, pred_sql)
+            conn.execute(sql)
+            register_predicate_rewrite(org_sql, sql)
             logger.info(f'Serialized a new predicate rewrite for {query}')
         except:
             logger.info(f'Rewrite version of {query} did not pass syntax check, skipping this one...')
         
+if __name__ == '__main__':
+    query = 'query78.sql'
+    rewrite_and_test_syntax(SparkConnector, query)

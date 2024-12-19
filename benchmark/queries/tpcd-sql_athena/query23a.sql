@@ -40,10 +40,10 @@ from
                 select ws_sold_date_sk, ws_item_sk, ws_bill_customer_sk,
                         ws_quantity, ws_list_price
                 from web_sales
-      )
+            )
             where d_year = 1999
             and d_moy = 1
-         and cs_sold_date_sk = d_date_sk
-         and cs_item_sk in (select cs_item_sk from frequent_ss_items)
-         and cs_bill_customer_sk in (select c_customer_sk from best_ss_customer))
+            and cs_sold_date_sk = d_date_sk
+            and cs_item_sk in (select item_sk from frequent_ss_items)
+            and cs_bill_customer_sk in (select c_customer_sk from best_ss_customer))
  limit 100;

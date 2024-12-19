@@ -48,7 +48,11 @@ def explore_rewrite_configs(connector: connectors.connector.DBConnector, sql_que
     sql_query_raw = sql_query
     while rewrite_exploration.has_next():
         sql_query = rewrite((REWRITE_SCHEMA, sql_query, rewrite_exploration.next()))
-        logger.debug(f'Rewrites into: {sql_query}')
+        if sql_query != 'NA':
+            logger.debug(f'Rewrites into: {sql_query}')
+        else:
+            logger.debug('Rewrite failed')
+            continue
         query_plan = connector.explain(sql_query)
         # Check if a new query plan is generated
         if register_rewrite_config_and_measurement(query_path, rewrite_exploration.get_disabled_opts_rules(), sql_query, query_plan, timed_result=None, initial_call=True):
